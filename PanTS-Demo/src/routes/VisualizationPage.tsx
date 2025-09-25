@@ -10,7 +10,7 @@ import ReportScreen from '../components/ReportScreen/ReportScreen';
 import WindowingSlider from '../components/WindowingSlider/WindowingSlider';
 import { renderVisualization, setToolGroupOpacity, setVisibilities } from '../helpers/CornerstoneNifti';
 import { create3DVolume, updateGeneralOpacity, updateVisibilities } from '../helpers/NiiVueNifti';
-import { API_BASE, APP_CONSTANTS, segmentation_categories } from '../helpers/constants';
+import { API_BASE, APP_CONSTANTS, segmentation_categories, segmentation_category_colors } from '../helpers/constants';
 import { filenameToName } from '../helpers/utils';
 import { type CheckBoxData, type LastClicked, type NColorMap } from '../types';
 import './VisualizationPage.css';
@@ -49,7 +49,7 @@ function VisualizationPage() {
   const [showTaskDetails, setShowTaskDetails] = useState(true);
   const [showOrganDetails, setShowOrganDetails] = useState(false);  
   // const [loading, setLoading] = useState(true);
-  const [labelColorMap, setLabelColorMap] = useState<{ [key: number]: Color }>({});
+  const [labelColorMap, setLabelColorMap] = useState<{ [key: number]: Color }>(segmentation_category_colors);
   const [progress, setProgress] = useState(0);
 
 
@@ -112,35 +112,35 @@ function VisualizationPage() {
     setup();
   }, [pantsCase, axial_ref, sagittal_ref, coronal_ref, render_ref, labelColorMap]);
   // Toggle checkbox state
-    useEffect(() => {
-    const fetchColorMap = async () => {
-      try {
-        // const cached = sessionStorage.getItem(cacheKey);
-        // if (cached) {
-        //   setLabelColorMap(JSON.parse(cached));
-        //   return;
-        // }
-        setProgress(0.15)
-        const response = await fetch(`${APP_CONSTANTS.API_ORIGIN}/api/get-label-colormap/${pantsCase}`);
-        const lut = await response.json();
-        const parsedMap: {[key: number]: Color}= {};
-        for (const labelId in lut) {
-          const color = lut[labelId];
-          if (color && color.R !== undefined) {
-            const arr: Color = [color.R, color.G, color.B, color.A ?? 255];
-            parsedMap[Number(labelId)] = arr;
-          }
-        }
-        setLabelColorMap(parsedMap);
+  //   useEffect(() => {
+  //   const fetchColorMap = async () => {
+  //     try {
+  //       // const cached = sessionStorage.getItem(cacheKey);
+  //       // if (cached) {
+  //       //   setLabelColorMap(JSON.parse(cached));
+  //       //   return;
+  //       // }
+  //       setProgress(0.15)
+  //       const response = await fetch(`${APP_CONSTANTS.API_ORIGIN}/api/get-label-colormap/${pantsCase}`);
+  //       const lut = await response.json();
+  //       const parsedMap: {[key: number]: Color}= {};
+  //       for (const labelId in lut) {
+  //         const color = lut[labelId];
+  //         if (color && color.R !== undefined) {
+  //           const arr: Color = [color.R, color.G, color.B, color.A ?? 255];
+  //           parsedMap[Number(labelId)] = arr;
+  //         }
+  //       }
+  //       setLabelColorMap(parsedMap);
 
-        setProgress(0.7)
-      } catch (err) {
-        console.warn("❗ Failed to fetch colormap:", err);
-      }
-    };
+  //       setProgress(0.7)
+  //     } catch (err) {
+  //       console.warn("❗ Failed to fetch colormap:", err);
+  //     }
+  //   };
 
-    fetchColorMap();
-  }, [pantsCase]);
+  //   fetchColorMap();
+  // }, [pantsCase]);
   
 
   // Update VOI (window/level) settings

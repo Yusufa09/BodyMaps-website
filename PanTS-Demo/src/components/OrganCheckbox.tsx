@@ -2,13 +2,15 @@ import type { Color } from '@cornerstonejs/core/dist/types/types';
 import { IconArrowLeft, IconChevronRight } from '@tabler/icons-react';
 import React, { useEffect, useState } from 'react';
 import { OrganSystems, OrganSystemsArray, segmentation_categories } from '../helpers/constants';
-import { type Systems } from '../types';
+import { type AllSystems, type OrganSystemsAllType, type SubSystems, type Systems } from '../types';
 
 type ChipBoxProps = {
   labelColorMap: {[key: number]: number[]};
-  system: "Vascular System" | "Adrenal Glands" | "Pancreas" | "Kidneys" | "Digestive System" | "Femur" | "Lung" | "Other";
+  system: AllSystems;
   setCheckState: React.Dispatch<React.SetStateAction<boolean[]>>;
   checkState: boolean[];
+  level: number;
+  OrganSystem: OrganSystemsAllType
 }
 
 type Props = {
@@ -30,26 +32,35 @@ const getOrganIdx = (organ: string) => {
   return 0;
 }
 
-function Checked({ system, labelColorMap, checkState, setCheckState }: ChipBoxProps) {
+function Checked({ OrganSystem, system, labelColorMap, checkState, setCheckState, level=0 }: ChipBoxProps) {
     const [collapsed, setCollapsed] = useState(false);
     const [toggled, setToggled] = useState(true);
 
     useEffect(() => {
-      OrganSystems[system].forEach((organ) => {
+      if (!OrganSystem[system]) return;
+      OrganSystem[system].forEach((sub) => {
         setCheckState(checkState => {
           const newCheckState = [...checkState];
-          newCheckState[getOrganIdx(organ)+1] = toggled;
+          if (typeof sub === "string") {
+            newCheckState[getOrganIdx(sub)+1] = toggled; 
+            return newCheckState
+          }
+          const key: SubSystems = Object.keys(sub)[0] as SubSystems;
+          const suborgans = sub[key];
+          if (!suborgans) return newCheckState;
+          suborgans.forEach((suborgan) => newCheckState[getOrganIdx(suborgan)+1] = toggled);
           return newCheckState;
         });
       })
-    }, [toggled, setCheckState, system])
-    // console.log(getOrganIdx(system))
+      
+    }, [toggled, setCheckState, OrganSystem, system])
+    if (!OrganSystem[system] || level > 1) return null;
     return (
-      <div className="flex gap-2 flex-col" >
+      <div className={`flex gap-2 flex-col ${level === 0 ? "" : "pl-4"}`} >
         <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCollapsed(prev => !prev)}>
+            <div className={`flex items-center ${level === 0 ? "gap-2" : "gap-1"} cursor-pointer`} onClick={() => setCollapsed(prev => !prev)}>
             <IconChevronRight className={`cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center ${collapsed ? "rotate-90" : ""}`} />
-            <div className="text-white text-lg">{system}</div>
+            <div className={`text-white ${level === 0 ? "text-lg" : "text-md"}`}>{system}</div>
             </div>
             <input type="checkbox" className="w-4 h-4 text-blue-600 !bg-gray-700 border-gray-600 !rounded-sm focus:ring-blue-600 ring-offset-gray-800 focus:ring-2"
               checked={toggled}
@@ -57,11 +68,13 @@ function Checked({ system, labelColorMap, checkState, setCheckState }: ChipBoxPr
             />
         </div>
             <div className={`flex flex-col gap-2 transition-all duration-100 origin-top ${!collapsed ? "hidden scale-y-0" : "scale-y-100"}`}>
-            {OrganSystems[system].map((organ) => {
-              const color = labelColorMap[getOrganIdx(organ)+1];
-              const rgb = color ? `rgb(${color[0]}, ${color[1]}, ${color[2]})` : "gray";
-              return (
-                <div className="flex items-center gap-2 pl-4" key={organ}>
+            {OrganSystem[system].map((organ, idx) => {
+              if (typeof organ === "string") {
+                
+                const color = labelColorMap[getOrganIdx(organ)+1];
+                const rgb = color ? `rgb(${color[0]}, ${color[1]}, ${color[2]})` : "gray";
+                return (
+                  <div className={`flex items-center gap-2 "pl-4"`} key={idx}>
                 <div className="cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center" />
                 <div className={`text-white text-md rounded-md p-1 cursor-pointer hover:border-3 ${!checkState[getOrganIdx(organ)+1] ? "border-0" : "border-2"}`} style={{ borderColor: rgb}} onClick={() => {
                   setCheckState((prev) => {
@@ -71,7 +84,14 @@ function Checked({ system, labelColorMap, checkState, setCheckState }: ChipBoxPr
                   });
                 }}>{organ}</div>
                 </div>
-            )})}
+                )
+            } else if(typeof organ === "object" && Object.keys(organ).length === 1) {
+              const organKey: AllSystems = Object.keys(organ)[0] as AllSystems;
+              return <>
+                <Checked key={Object.keys(organ)[0]} OrganSystem={organ} system={organKey} labelColorMap={labelColorMap} checkState={checkState} setCheckState={setCheckState} level={level+1} />
+              </>
+            }
+            })}
             </div>
         </div>
     );
@@ -107,6 +127,8 @@ function OrganCheckbox({ setCheckState, checkState, labelColorMap, setShowTaskDe
         {OrganSystemsArray.map((system: Systems, idx) => {
             return (
                <Checked
+                  level={0}
+                  OrganSystem={OrganSystems}
                   key={idx}
                   system={system}
                   labelColorMap={labelColorMap}

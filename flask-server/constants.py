@@ -14,15 +14,6 @@ class Constants:
     DB_HOST = os.environ.get('DB_HOST')
     DB_NAME = os.environ.get('DB_NAME')
 
-
-    if all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
-        SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}'
-    else:
-        print("⚠️ Falling back to SQLite")
-        SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
-
-    #SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}'
-
     SCHEDULED_CHECK_INTERVAL = 5  # minutes  
 
     # api_blueprint variables

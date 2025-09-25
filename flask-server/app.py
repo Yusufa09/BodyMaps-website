@@ -14,9 +14,7 @@ from constants import Constants
 
 from api.api_blueprint import api_blueprint
 from models.base import db
-from models.application_session import ApplicationSession
 from models.combined_labels import CombinedLabels
-from services.session_manager import SessionManager
 
 def create_session_dir():
     if not os.path.isdir(Constants.SESSIONS_DIR_NAME):
@@ -28,25 +26,15 @@ def create_app():
     create_session_dir()
     app = Flask(__name__)
     app.register_blueprint(api_blueprint, url_prefix=f'{Constants.BASE_PATH}/api')
-    app.config['SQLALCHEMY_DATABASE_URI'] = Constants.SQLALCHEMY_DATABASE_URI
 
-    # ✅ 添加 logger filter 来屏蔽 /api/progress/ 日志
     class FilterProgressRequests(logging.Filter):
         def filter(self, record):
             return "/api/progress/" not in record.getMessage()
 
     logging.getLogger('werkzeug').addFilter(FilterProgressRequests())
 
-    try:
-        db.init_app(app)
-        print('connected to db')
-    except: 
-        print('Could not connect to DB!')
-
     CORS(app)
 
-    with app.app_context():
-        db.create_all()
     return app
 
 
@@ -74,7 +62,6 @@ def find_watch_files():
 if __name__ == "__main__":
     use_ssl = os.environ.get("USE_SSL", "false").lower() == "true"
     ssl_context = ("../certs/localhost-cert.pem", "../certs/localhost-key.pem") if use_ssl else None
-    print("🔁 Watching code files only (excluding sessions/)...")
     run_simple(
         hostname="0.0.0.0",
         port=5001,

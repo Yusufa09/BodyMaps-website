@@ -78,8 +78,14 @@ export type SegmentationAnnotations = {
 	[key in SegmentationCategories]?: string[];
 };
 
-export type Systems = "Vascular System" | "Adrenal Glands" | "Pancreas" | "Kidneys" | "Digestive System" | "Femur" | "Lung" | "Other";
-export type OrganSystemsType = {[key in Systems]: SegmentationCategories[]};
+export type Systems = "Vascular System" | "Lymphatic/Immune System" | "Reproductive System" | "Urinary System" | "Digestive System" | "Skeletal System" | "Respiratory System" | "Endocrine System";
+export type SubSystems = "Adrenal Glands" | "Pancreas" | "Kidneys" | "Lung"
+
+export type AllSystems = Systems | SubSystems;
+
+export type OrganSystemsAllType = Partial<Record<AllSystems, (SegmentationCategories | SubSystemsType)[]>>;
+export type OrganSystemsType = {[key in Systems]: (SegmentationCategories | SubSystemsType)[]};
+export type SubSystemsType = Partial<Record<SubSystems, SegmentationCategories[]>>;
 
 
 export type SegmentationCategories =
