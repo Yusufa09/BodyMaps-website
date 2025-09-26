@@ -33,16 +33,21 @@ export default function Preview({ id, previewMetadata }: Props) {
 	if (!previewMetadata) return null;
 
 	return (
-		<div className="flex flex-col gap-2 shadow-md p-4 rounded bg-blue-950">
-			<div className="flex flex-col gap-1">
+		<div className="flex flex-col gap-2 p-4 shadow-md bg-blue-950">
+			<div className="flex flex-col justify-center items-center gap-1">
 				<div className="w-[400px] h-[300px] relative">
 
 				<img src={`/case_${id}_slice.png`} alt="Preview" className="w-full h-full object-cover absolute top-0 left-0 opacity-95"/>
 				{/* <img src={thumbnail} alt="Preview" className="w-full h-full object-cover absolute top-0 left-0 opacity-50"/> */}
 				</div>
+				{/* <div className="flex justify-between w-full"> */}
 				<p className="font-bold text-lg">Case {id}</p>
+				<div className="flex gap-2">
+
 				<div>Age: {previewMetadata.age || "-"}</div>
 				<div>Sex: {previewMetadata.sex || "-"}</div>
+				{/* </div> */}
+				</div>
 			</div>
 			<button onClick={() => navigate(`/case/${id}`)} className="w-full">View Case</button>
 		</div>
