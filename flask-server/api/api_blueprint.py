@@ -358,25 +358,6 @@ def get_segmentations(combined_labels_id):
         return jsonify({"error": str(e)}), 500
 
 
-@api_blueprint.route('/upload_and_get_maskdata', methods=['POST'])
-def upload_and_get_maskdata():
-    return jsonify({'error': 'Not implemented'}), 501
-
-
-
-@api_blueprint.route(f'/terminate-session', methods=['POST'])
-def terminate_session():
-    session_id = request.form['sessionKey']
-    session_manager = SessionManager.instance()
-    
-    success = session_manager.terminate_session(session_id)
-
-    if success:
-        return jsonify({'message': 'removed session!'})
-    else:
-        return jsonify({'message': 'Session does not exist!'})
-
-
 @api_blueprint.route('/download/<id>', methods=['GET'])
 def download_segmentation_zip(id):
     try:
@@ -407,18 +388,6 @@ def download_segmentation_zip(id):
     except Exception as e:
         print(f"❌ [Download Error] {e}")
         return jsonify({"error": "Internal server error"}), 500
-
-@api_blueprint.route('/start_session', methods=['POST'])
-def start_session():
-    session_id = generate_uuid()
-    SessionManager.instance().register_session(session_id)
-
-    start_time = datetime.now()
-    expected_time = 35 
-    progress_tracker[session_id] = (start_time, expected_time, False)
-    #print(session_id)
-    print('start_session',session_id)
-    return jsonify({"session_id": session_id}), 200
 
 import threading
 import time
