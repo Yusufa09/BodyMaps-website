@@ -283,7 +283,7 @@ function VisualizationPage() {
                     onWindowChange={handleWindowChange}
                   />
                   <button className='text-white relative pt-3 !bg-blue-700 hover:!border-white' onClick={() => {setShowOrganDetails(prev => !prev); setShowTaskDetails(prev => !prev);}}>
-                    Manage organs
+                    Class Map
                   </button>
   
                   {/* Report Download Buttons */}
