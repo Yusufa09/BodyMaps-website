@@ -1,314 +1,426 @@
-import type { RenderingEngine } from '@cornerstonejs/core';
-import type { Color, ColorLUT, IImageVolume } from '@cornerstonejs/core/dist/types/types';
-import { Niivue } from '@niivue/niivue';
-import { IconDownload, IconHome, IconReport, IconSettings } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import RotatingModelLoader from '../components/Loading';
-import OpacitySlider from '../components/OpacitySlider/OpacitySlider';
-import OrganCheckbox from '../components/OrganCheckbox';
-import ReportScreen from '../components/ReportScreen/ReportScreen';
-import WindowingSlider from '../components/WindowingSlider/WindowingSlider';
-import { renderVisualization, setToolGroupOpacity, setVisibilities } from '../helpers/CornerstoneNifti';
-import { create3DVolume, updateVisibilities } from '../helpers/NiiVueNifti';
-import { API_BASE, APP_CONSTANTS, segmentation_categories, segmentation_category_colors } from '../helpers/constants';
-import { filenameToName } from '../helpers/utils';
-import { type CheckBoxData, type LastClicked, type NColorMap } from '../types';
-import './VisualizationPage.css';
+import type { RenderingEngine } from "@cornerstonejs/core";
+import type {
+	Color,
+	ColorLUT,
+	IImageVolume,
+} from "@cornerstonejs/core/dist/types/types";
+import { Niivue } from "@niivue/niivue";
+import {
+	IconDownload,
+	IconHome,
+	IconReport,
+	IconSettings,
+	IconWindow,
+	IconZoom,
+} from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import RotatingModelLoader from "../components/Loading";
+import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
+import OrganCheckbox from "../components/OrganCheckbox";
+import ReportScreen from "../components/ReportScreen/ReportScreen";
+import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
+import ZoomHandle from "../components/zoomHandle";
+import {
+	renderVisualization,
+	setToolGroupOpacity,
+	setVisibilities,
+} from "../helpers/CornerstoneNifti";
+import { create3DVolume, updateVisibilities } from "../helpers/NiiVueNifti";
+import {
+	API_BASE,
+	APP_CONSTANTS,
+	segmentation_categories,
+	segmentation_category_colors,
+} from "../helpers/constants";
+import { filenameToName } from "../helpers/utils";
+import { type CheckBoxData, type LastClicked, type NColorMap } from "../types";
+import "./VisualizationPage.css";
 
 function VisualizationPage() {
-  // References and state
-  const params = useParams();
-  const pantsCase = params.caseId ?? '1';
-  
-  const axial_ref = useRef<HTMLDivElement>(null);
-  const sagittal_ref = useRef<HTMLDivElement>(null);
-  const coronal_ref = useRef<HTMLDivElement>(null);
-  const render_ref = useRef<HTMLCanvasElement>(null);
-  const cmapRef = useRef<NColorMap>(null);
-  // const TaskMenu_ref = useRef(null);
-  const VisualizationContainer_ref = useRef(null);
-  const segmentationRef = useRef<IImageVolume>(null);
-//   const lastClickInfoRef = useRef(null);
+	// References and state
+	const params = useParams();
+	const pantsCase = params.caseId ?? "1";
 
-//   const [sliceAxial, setSliceAxial] = useState(0);
-//   const [sliceSagittal, setSliceSagittal] = useState(0);
-//   const [sliceCoronal, setSliceCoronal] = useState(0);
-  const [checkState, setCheckState] = useState<boolean[]>([true]);
-  const [segmentationRepresentationUIDs, setSegmentationRepresentationUIDs] = useState<string[] | null>(null);
-  const [NV, setNV] = useState<Niivue | undefined>();
-  const [sessionKey, _setSessionKey] = useState<string | undefined>(undefined);
-  const [checkBoxData, setCheckBoxData] = useState<CheckBoxData[]>([]);
-  const [opacityValue, setOpacityValue] = useState(APP_CONSTANTS.DEFAULT_SEGMENTATION_OPACITY * 100);
-  const [windowWidth, setWindowWidth] = useState(400);
-  const [windowCenter, setWindowCenter] = useState(50);
-  const [renderingEngine, setRenderingEngine] = useState<RenderingEngine | null>(null);
-  const [viewportIds, setViewportIds] = useState<string[]>([]);
-  const [volumeId, setVolumeId] = useState<string | null>(null);
-  const [showReportScreen, setShowReportScreen] = useState(false);
-  const [_lastClicked, setLastClicked] = useState<LastClicked | null>(null);
-  const [showTaskDetails, setShowTaskDetails] = useState(true);
-  const [showOrganDetails, setShowOrganDetails] = useState(false);  
-  const [loading, setLoading] = useState(true);
-  const [labelColorMap, _setLabelColorMap] = useState<{ [key: number]: Color }>(segmentation_category_colors);
+	const axial_ref = useRef<HTMLDivElement>(null);
+	const sagittal_ref = useRef<HTMLDivElement>(null);
+	const coronal_ref = useRef<HTMLDivElement>(null);
+	const render_ref = useRef<HTMLCanvasElement>(null);
+	const cmapRef = useRef<NColorMap>(null);
+	// const TaskMenu_ref = useRef(null);
+	const VisualizationContainer_ref = useRef(null);
+	const segmentationRef = useRef<IImageVolume>(null);
+	//   const lastClickInfoRef = useRef(null);
 
+	//   const [sliceAxial, setSliceAxial] = useState(0);
+	//   const [sliceSagittal, setSliceSagittal] = useState(0);
+	//   const [sliceCoronal, setSliceCoronal] = useState(0);
+	const [checkState, setCheckState] = useState<boolean[]>([true]);
+	const [segmentationRepresentationUIDs, setSegmentationRepresentationUIDs] =
+		useState<string[] | null>(null);
+	const [NV, setNV] = useState<Niivue | undefined>();
+	const [sessionKey, _setSessionKey] = useState<string | undefined>(undefined);
+	const [checkBoxData, setCheckBoxData] = useState<CheckBoxData[]>([]);
+	const [opacityValue, setOpacityValue] = useState(
+		APP_CONSTANTS.DEFAULT_SEGMENTATION_OPACITY * 100
+	);
+	const [windowWidth, setWindowWidth] = useState(400);
+	const [windowCenter, setWindowCenter] = useState(50);
+	const [renderingEngine, setRenderingEngine] =
+		useState<RenderingEngine | null>(null);
+	const [viewportIds, setViewportIds] = useState<string[]>([]);
+	const [volumeId, setVolumeId] = useState<string | null>(null);
+	const [showReportScreen, setShowReportScreen] = useState(false);
+	const [_lastClicked, setLastClicked] = useState<LastClicked | null>(null);
+	const [showTaskDetails, setShowTaskDetails] = useState(true);
+	const [showOrganDetails, setShowOrganDetails] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [labelColorMap, _setLabelColorMap] = useState<{ [key: number]: Color }>(
+		segmentation_category_colors
+	);
+	const [zoomMode, setZoomMode] = useState(false);
+	const [zoomLevel, setZoomLevel] = useState(1);
 
-  
+	const navigate = useNavigate();
+	// const location = useLocation();
 
+	// Load and render visualization on first render
+	useEffect(() => {
+		const setup = async () => {
+			// const state = location.state;
+			// if (!state) {
+			// alert('No Nifti Files Uploaded!');
+			// navigate('/');
+			// return;
+			// }
 
-  const navigate = useNavigate();
-  // const location = useLocation();
+			const checkBoxData = segmentation_categories.map((filename, i) => ({
+				label: filenameToName(filename),
+				id: i + 1,
+			}));
+			setCheckBoxData(checkBoxData);
+			const initialState = [true]; // background 永远可见
+			checkBoxData.forEach((item) => {
+				initialState[item.id] = true;
+			});
+			setCheckState(initialState);
+			const max = Math.max(
+				...Object.keys(labelColorMap).map((key) => parseInt(key))
+			);
 
-  // Load and render visualization on first render
-  useEffect(() => {
-    const setup = async () => {
-      // const state = location.state;
-      // if (!state) {
-        // alert('No Nifti Files Uploaded!');
-        // navigate('/');
-        // return;
-      // }
+			const cmap: ColorLUT = Array.from({ length: max + 1 }, () => [
+				0, 0, 0, 0,
+			]);
+			for (const key in labelColorMap) {
+				cmap[parseInt(key)] = labelColorMap[parseInt(key)];
+			}
+			if (
+				!axial_ref.current ||
+				!sagittal_ref.current ||
+				!coronal_ref.current ||
+				!render_ref.current ||
+				cmap.length === 0
+			)
+				return;
 
+			const result = await renderVisualization(
+				axial_ref.current,
+				sagittal_ref.current,
+				coronal_ref.current,
+				cmap,
+				pantsCase,
+				setLoading
+			);
 
+			// setLoading(false);
+			if (!result) return;
+			const {
+				segmentationVolumeArray,
+				segRepUIDs,
+				renderingEngine,
+				viewportIds,
+				volumeId,
+			} = result;
 
-      const checkBoxData = segmentation_categories.map((filename, i) => ({
-        label: filenameToName(filename),
-        id: i + 1
-      }));
-      setCheckBoxData(checkBoxData);
-      const initialState = [true];  // background 永远可见
-      checkBoxData.forEach(item => {
-        initialState[item.id] = true;
-      });
-      setCheckState(initialState);
-      const max = Math.max(...Object.keys(labelColorMap).map((key) => parseInt(key)));
+			setSegmentationRepresentationUIDs(segRepUIDs);
+			setRenderingEngine(renderingEngine);
+			setViewportIds(viewportIds);
+			setVolumeId(volumeId);
 
-      const cmap: ColorLUT = Array.from({ length: max+1 }, () => [0, 0, 0, 0]);
-      for (const key in labelColorMap) {
-        cmap[parseInt(key)] = labelColorMap[parseInt(key)];
-      }
-      if (!axial_ref.current || !sagittal_ref.current || !coronal_ref.current || !render_ref.current || cmap.length === 0) return;
+			const { nv, cmapCopy } = await create3DVolume(
+				render_ref,
+				pantsCase,
+				labelColorMap
+			);
+			cmapRef.current = cmapCopy;
+			setNV(nv);
+			segmentationRef.current = segmentationVolumeArray;
+		};
 
+		setup();
+	}, [
+		pantsCase,
+		axial_ref,
+		sagittal_ref,
+		coronal_ref,
+		render_ref,
+		labelColorMap,
+	]);
+	// Toggle checkbox state
+	//   useEffect(() => {
+	//   const fetchColorMap = async () => {
+	//     try {
+	//       // const cached = sessionStorage.getItem(cacheKey);
+	//       // if (cached) {
+	//       //   setLabelColorMap(JSON.parse(cached));
+	//       //   return;
+	//       // }
+	//       setProgress(0.15)
+	//       const response = await fetch(`${APP_CONSTANTS.API_ORIGIN}/api/get-label-colormap/${pantsCase}`);
+	//       const lut = await response.json();
+	//       const parsedMap: {[key: number]: Color}= {};
+	//       for (const labelId in lut) {
+	//         const color = lut[labelId];
+	//         if (color && color.R !== undefined) {
+	//           const arr: Color = [color.R, color.G, color.B, color.A ?? 255];
+	//           parsedMap[Number(labelId)] = arr;
+	//         }
+	//       }
+	//       setLabelColorMap(parsedMap);
 
-      const result =
-        await renderVisualization(axial_ref.current, sagittal_ref.current, coronal_ref.current, cmap, pantsCase, setLoading);
+	//       setProgress(0.7)
+	//     } catch (err) {
+	//       console.warn("❗ Failed to fetch colormap:", err);
+	//     }
+	//   };
 
-      
-      // setLoading(false);
-      if (!result) return;
-      const { segmentationVolumeArray, segRepUIDs, renderingEngine, viewportIds, volumeId } = result;
+	//   fetchColorMap();
+	// }, [pantsCase]);
 
-      setSegmentationRepresentationUIDs(segRepUIDs);
-      setRenderingEngine(renderingEngine);
-      setViewportIds(viewportIds);
-      setVolumeId(volumeId);
+	// Update VOI (window/level) settings
+	const handleWindowChange = (
+		newWidth: number | null,
+		newCenter: number | null
+	) => {
+		const _width = Math.max(newWidth ?? windowWidth, 1);
+		const _center = newCenter ?? windowCenter;
 
-      const { nv, cmapCopy } = await create3DVolume(render_ref, pantsCase, labelColorMap);
-      cmapRef.current = cmapCopy;
-      setNV(nv);
-      segmentationRef.current = segmentationVolumeArray;
-    };
+		setWindowWidth(_width);
+		setWindowCenter(_center);
 
-    setup();
-  }, [pantsCase, axial_ref, sagittal_ref, coronal_ref, render_ref, labelColorMap]);
-  // Toggle checkbox state
-  //   useEffect(() => {
-  //   const fetchColorMap = async () => {
-  //     try {
-  //       // const cached = sessionStorage.getItem(cacheKey);
-  //       // if (cached) {
-  //       //   setLabelColorMap(JSON.parse(cached));
-  //       //   return;
-  //       // }
-  //       setProgress(0.15)
-  //       const response = await fetch(`${APP_CONSTANTS.API_ORIGIN}/api/get-label-colormap/${pantsCase}`);
-  //       const lut = await response.json();
-  //       const parsedMap: {[key: number]: Color}= {};
-  //       for (const labelId in lut) {
-  //         const color = lut[labelId];
-  //         if (color && color.R !== undefined) {
-  //           const arr: Color = [color.R, color.G, color.B, color.A ?? 255];
-  //           parsedMap[Number(labelId)] = arr;
-  //         }
-  //       }
-  //       setLabelColorMap(parsedMap);
+		if (!renderingEngine || !viewportIds.length || !volumeId) return;
 
-  //       setProgress(0.7)
-  //     } catch (err) {
-  //       console.warn("❗ Failed to fetch colormap:", err);
-  //     }
-  //   };
+		const windowLow = _center - _width / 2;
+		const windowHigh = _center + _width / 2;
 
-  //   fetchColorMap();
-  // }, [pantsCase]);
-  
+		viewportIds.forEach((viewportId) => {
+			const viewport = renderingEngine.getViewport(viewportId);
+			const actors = viewport.getActors();
 
-  // Update VOI (window/level) settings
-  const handleWindowChange = (newWidth: number | null, newCenter: number | null) => {
-    const _width = Math.max(newWidth ?? windowWidth, 1);
-    const _center = newCenter ?? windowCenter;
+			for (const actor of actors) {
+				if (actor.uid === volumeId) {
+					try {
+						const tf = actor.actor.getProperty().getRGBTransferFunction(0);
+						tf.setMappingRange(windowLow, windowHigh);
+						tf.updateRange();
+						viewport.render();
+					} catch (e) {
+						console.warn("[VOI Error]", e);
+					}
+				}
+			}
+		});
+	};
 
-    setWindowWidth(_width);
-    setWindowCenter(_center);
+	// Apply window settings on change
+	useEffect(() => {
+		if (renderingEngine && viewportIds.length && volumeId) {
+			handleWindowChange(windowWidth, windowCenter);
+		}
+	}, [renderingEngine, viewportIds, volumeId]);
 
-    if (!renderingEngine || !viewportIds.length || !volumeId) return;
+	// Update segmentation visibility when state changes
+	useEffect(() => {
+		if (segmentationRepresentationUIDs && checkState && NV) {
+			const checkStateArr = [
+				true, // ID=0 background 永远可见
+				...checkBoxData.map((item) => !!checkState[item.id]),
+			];
+			console.log("150", checkStateArr);
+			setVisibilities(segmentationRepresentationUIDs, checkStateArr);
+			updateVisibilities(NV, checkStateArr, sessionKey, cmapRef.current);
+		}
+	}, [
+		segmentationRepresentationUIDs,
+		checkState,
+		NV,
+		checkBoxData,
+		sessionKey,
+	]);
 
-    const windowLow = _center - _width / 2;
-    const windowHigh = _center + _width / 2;
+	const handleOpacityOnSliderChange = (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const value = Number(event.target.value);
+		setOpacityValue(value);
+		setToolGroupOpacity(value / 100);
+		// updateGeneralOpacity(render_ref, value / 100);
+	};
 
-    viewportIds.forEach((viewportId) => {
-      const viewport = renderingEngine.getViewport(viewportId);
-      const actors = viewport.getActors();
+	const handleOpacityOnFormSubmit = (value: number) => {
+		setOpacityValue(value);
+		setToolGroupOpacity(value / 100);
+		// updateGeneralOpacity(render_ref, value / 100);
+	};
 
-      for (const actor of actors) {
-        if (actor.uid === volumeId) {
-          try {
-            const tf = actor.actor.getProperty().getRGBTransferFunction(0);
-            tf.setMappingRange(windowLow, windowHigh);
-            tf.updateRange();
-            viewport.render();
-          } catch (e) {
-            console.warn("[VOI Error]", e);
-          }
-        }
-      }
-    });
-  };
+	const handleDownloadClick = async () => {
+		const response = await fetch(`${API_BASE}/api/download/${pantsCase}`);
+		const blob = await response.blob();
+		const url = window.URL.createObjectURL(blob);
 
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = `${pantsCase}_segmentations.zip`;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		window.URL.revokeObjectURL(url);
+	};
 
-  // Apply window settings on change
-  useEffect(() => {
-    if (renderingEngine && viewportIds.length && volumeId) {
-      handleWindowChange(windowWidth, windowCenter);
-    }
-  }, [renderingEngine, viewportIds, volumeId]);
+	const navBack = () => {
+		navigate("/");
+	};
+	const PREVIEW_IDS = [1, 17, 30, 35, 121];
 
+	if (PREVIEW_IDS.filter((id) => id === Number(pantsCase)).length === 0) {
+		navigate("/");
+		return null;
+	}
 
-  // Update segmentation visibility when state changes
-  useEffect(() => {
-    if (segmentationRepresentationUIDs && checkState && NV) {
-      const checkStateArr = [
-        true,  // ID=0 background 永远可见
-        ...checkBoxData.map(item => !!checkState[item.id])
-      ];
-      console.log('150', checkStateArr);
-      setVisibilities(segmentationRepresentationUIDs, checkStateArr);
-      updateVisibilities(NV, checkStateArr, sessionKey, cmapRef.current);
-    }
-  }, [segmentationRepresentationUIDs, checkState, NV, checkBoxData, sessionKey]);
-  
+	return (
+		<div
+			className="VisualizationPage"
+			style={{
+				display: "flex",
+				overflow: "hidden",
+				flexDirection: "column",
+				height: "100vh",
+				width: "100vw",
+			}}
+		>
+			<div style={{ position: "relative" }}>
+				<div className="sidebar position-absolute z-3 top-0 left-0">
+					<div>
+						<div className="flex">
+							<div
+								className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
+								onClick={() => setShowTaskDetails((prev) => !prev)}
+							>
+								<IconSettings color="white" />
+								{/* {showTaskDetails ? "Settings" : "Settings"} */}
+							</div>
+							<div
+								className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
+								onClick={() => navBack()}
+							>
+								<IconHome color="white" />
+								{/* {showTaskDetails ? "Settings" : "Settings"} */}
+							</div>
+						</div>
+						<div
+							className={`text-black bg-[#0f0824] m-[2vh] z-3 rounded-lg w-64 p-6 pt-3 gap-3 flex flex-col relative transition-all duration-100 origin-top-left ${
+								showTaskDetails ? "scale-0" : "scale-100"
+							}`}
+						>
+							{/* Toggle dropdown */}
 
+							{!showTaskDetails && (
+								<>
+									<div className="flex items-center justify-center mb-2">
+										<div className="text-white font-bold text-xl">{`Case ID: ${pantsCase}`}</div>
+									</div>
 
+									{zoomMode ? (
+										<ZoomHandle submitted={zoomLevel} setSubmitted={setZoomLevel}/>
+									) : (
+										<>
+											<OpacitySlider
+												opacityValue={opacityValue}
+												handleOpacityOnSliderChange={
+													handleOpacityOnSliderChange
+												}
+												handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
+											/>
 
-  const handleOpacityOnSliderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Number(event.target.value);
-    setOpacityValue(value);
-    setToolGroupOpacity(value / 100);
-    // updateGeneralOpacity(render_ref, value / 100);
-  };
+											<WindowingSlider
+												windowWidth={windowWidth}
+												windowCenter={windowCenter}
+												onWindowChange={handleWindowChange}
+											/>
+										</>
+									)}
+									{/* Report Download Zoom Buttons */}
+									{/* Opacity & Windowing Sliders */}
+                    <button
+                      className="text-white relative pt-3 !bg-blue-700 hover:!border-white"
+                      onClick={() => {
+                        setShowOrganDetails((prev) => !prev);
+                        setShowTaskDetails((prev) => !prev);
+                      }}
+                    >
+                      Class Map
+                    </button>
+									<div className="flex gap-3 items-center justify-center">
+										<div className="group hover:bg-gray-700 cursor-pointer p-2 rounded-md relative">
+											{!zoomMode ? (
+												<>
+													<IconZoom
+														onClick={() => setZoomMode(true)}
+														className="w-6 h-6 text-white relative"
+													></IconZoom>
+													<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
+														Zoom
+													</span>
+												</>
+											) : (
+												<>
+													<IconWindow
+														onClick={() => setZoomMode(false)}
+														className="w-6 h-6 text-white relative"
+													></IconWindow>
+													<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
+														Display
+													</span>
+												</>
+											)}
+										</div>
 
-  const handleOpacityOnFormSubmit = (value: number) => {
-    setOpacityValue(value);
-    setToolGroupOpacity(value / 100);
-    // updateGeneralOpacity(render_ref, value / 100);
-  };
+										<div className="group hover:bg-gray-700 cursor-pointer p-2 rounded-md relative  ">
+											<IconDownload
+												onClick={handleDownloadClick}
+												className="w-6 h-6 text-white relative"
+											></IconDownload>
+											<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
+												Download
+											</span>
+										</div>
+										<div className="group hover:bg-gray-700 cursor-pointer p-2 rounded-md relative">
+											<IconReport
+												className="w-6 h-6 text-white relative"
+												onClick={() => setShowReportScreen((prev) => !prev)}
+											></IconReport>
+											<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
+												Report
+											</span>
+										</div>
+									</div>
+								</>
+							)}
+						</div>
+					</div>
+				</div>
 
-  const handleDownloadClick = async () => {
-    const response = await fetch(`${API_BASE}/api/download/${pantsCase}`);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${pantsCase}_segmentations.zip`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  };
-
-  const navBack = () => {
-    navigate('/');
-  };
-  const PREVIEW_IDS = [1, 17, 30, 35, 121];
-
-
-  if (PREVIEW_IDS.filter(id => id === Number(pantsCase)).length === 0) {
-    navigate("/");
-    return null;
-  }
-
-  return (
-    <div className="VisualizationPage" style={{ display: 'flex', overflow: 'hidden', flexDirection: 'column', height: '100vh', width: '100vw' }}>
-      <div style={{ position: 'relative' }}>
-        <div className="sidebar position-absolute z-3 top-0 left-0">
-          
-          <div>
-            <div className='flex'>
-            <div
-              className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
-              onClick={() => setShowTaskDetails(prev => !prev)}
-              >
-              <IconSettings color="white"/>
-              {/* {showTaskDetails ? "Settings" : "Settings"} */}
-            </div>
-            <div
-              className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
-              onClick={() => navBack()}
-              >
-              <IconHome color="white"/>
-              {/* {showTaskDetails ? "Settings" : "Settings"} */}
-            </div>
-            </div>
-            <div className={`text-black bg-[#0f0824] m-[2vh] z-3 rounded-lg w-fit p-6 pt-3 gap-3 flex flex-col relative transition-all duration-100 origin-top-left ${showTaskDetails ? "scale-0" : "scale-100"}`}>
-              {/* Toggle dropdown */}
-  
-              {!showTaskDetails && (
-                <>
-                  <div className="flex items-center justify-center mb-2">
-                    <div className="text-white font-bold text-xl">{`Case ID: ${pantsCase}`}</div>
-                  </div>
-  
-  
-                  {/* Opacity & Windowing Sliders */}
-                  <OpacitySlider
-                    opacityValue={opacityValue}
-                    handleOpacityOnSliderChange={handleOpacityOnSliderChange}
-                    handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
-                  />
-  
-                  <WindowingSlider
-                    windowWidth={windowWidth}
-                    windowCenter={windowCenter}
-                    onWindowChange={handleWindowChange}
-                  />
-                  <button className='text-white relative pt-3 !bg-blue-700 hover:!border-white' onClick={() => {setShowOrganDetails(prev => !prev); setShowTaskDetails(prev => !prev);}}>
-                    Class Map
-                  </button>
-  
-                  {/* Report Download Buttons */}
-                  <div className="flex gap-3 items-center justify-center">
-                    <div className='group hover:bg-gray-700 cursor-pointer p-2 rounded-md relative  '>
-                    <IconDownload onClick={handleDownloadClick} className='w-6 h-6 text-white relative'>
-                    </IconDownload>
-                      <span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">Download</span>
-                    </div>
-                    <div className='group hover:bg-gray-700 cursor-pointer p-2 rounded-md relative'>
-                    <IconReport className='w-6 h-6 text-white relative' onClick={() => setShowReportScreen(prev => !prev)}>
-                    </IconReport>
-                    <span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">Report</span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-  
-
-        </div>
-        
-        
-        {/* {
+				{/* {
           loading ?
           <div className="flex z-3 absolute top-0 left-0 w-screen h-screen items-center justify-center">
               <div role="status">
@@ -319,85 +431,88 @@ function VisualizationPage() {
           :
           null
         } */}
-        {
-          loading ? 
-         <RotatingModelLoader/>:
-          null
-        }
-          <div
-            className="visualization-container"
-            ref={VisualizationContainer_ref}
-            style={{ overflow: 'hidden' }}
-          > 
+				{loading ? <RotatingModelLoader /> : null}
+				<div
+					className="visualization-container"
+					ref={VisualizationContainer_ref}
+					style={{ overflow: "hidden" }}
+				>
+					<div
+						className="axial"
+						ref={axial_ref}
+						onMouseDown={(e) =>
+							setLastClicked({
+								orientation: "axial",
+								x: Math.floor(
+									e.clientX - e.currentTarget.getBoundingClientRect().left
+								),
+								y: Math.floor(
+									e.clientY - e.currentTarget.getBoundingClientRect().top
+								),
+							})
+						}
+					></div>
 
+					<div
+						className="sagittal"
+						ref={sagittal_ref}
+						onMouseDown={(e) =>
+							setLastClicked({
+								orientation: "sagittal",
+								x: Math.floor(
+									e.clientX - e.currentTarget.getBoundingClientRect().left
+								),
+								y: Math.floor(
+									e.clientY - e.currentTarget.getBoundingClientRect().top
+								),
+							})
+						}
+					></div>
 
-            <div
-              className="axial"
-              ref={axial_ref}
-              onMouseDown={(e) =>
-                setLastClicked({
-                  orientation: 'axial',
-                  x: Math.floor(e.clientX - e.currentTarget.getBoundingClientRect().left),
-                  y: Math.floor(e.clientY - e.currentTarget.getBoundingClientRect().top),
-                })
-              }
-            ></div>
-    
-            <div
-              className="sagittal"
-              ref={sagittal_ref}
-              onMouseDown={(e) =>
-                setLastClicked({
-                  orientation: 'sagittal',
-                  x: Math.floor(e.clientX - e.currentTarget.getBoundingClientRect().left),
-                  y: Math.floor(e.clientY - e.currentTarget.getBoundingClientRect().top),
-                })
-              }
-            ></div>
-    
-            <div
-              className="coronal"
-              ref={coronal_ref}
-              onMouseDown={(e) =>
-                setLastClicked({
-                  orientation: 'coronal',
-                  x: Math.floor(e.clientX - e.currentTarget.getBoundingClientRect().left),
-                  y: Math.floor(e.clientY - e.currentTarget.getBoundingClientRect().top),
-                })
-              }
-            ></div>
-    
-            <div className="render">
-              <div className="canvas">
-                <canvas ref={render_ref}></canvas>
-              </div>
-            </div>
-          </div>
+					<div
+						className="coronal"
+						ref={coronal_ref}
+						onMouseDown={(e) =>
+							setLastClicked({
+								orientation: "coronal",
+								x: Math.floor(
+									e.clientX - e.currentTarget.getBoundingClientRect().left
+								),
+								y: Math.floor(
+									e.clientY - e.currentTarget.getBoundingClientRect().top
+								),
+							})
+						}
+					></div>
 
+					<div className="render">
+						<div className="canvas">
+							<canvas ref={render_ref}></canvas>
+						</div>
+					</div>
+				</div>
+			</div>
 
+			{/* Fixed bottom bar for organ selection */}
 
-      </div>
-  
-      {/* Fixed bottom bar for organ selection */}
+			<OrganCheckbox
+				setCheckState={setCheckState}
+				checkState={checkState}
+				sessionId={sessionKey}
+				setShowTaskDetails={setShowTaskDetails}
+				setShowOrganDetails={setShowOrganDetails}
+				showOrganDetails={showOrganDetails}
+				labelColorMap={labelColorMap}
+			/>
 
-        <OrganCheckbox
-          setCheckState={setCheckState}
-          checkState={checkState}
-          sessionId={sessionKey}
-          setShowTaskDetails={setShowTaskDetails}
-          setShowOrganDetails={setShowOrganDetails}
-          showOrganDetails={showOrganDetails}
-          labelColorMap={labelColorMap}
-        />
-
-  
-      {showReportScreen && (
-        <ReportScreen id={pantsCase} onClose={() => setShowReportScreen(false)} />
-      )}
-    </div>
-  );
-  
+			{showReportScreen && (
+				<ReportScreen
+					id={pantsCase}
+					onClose={() => setShowReportScreen(false)}
+				/>
+			)}
+		</div>
+	);
 }
 
 export default VisualizationPage;
-

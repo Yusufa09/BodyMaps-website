@@ -12,7 +12,8 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
   const [centerInput, setCenterInput] = useState(windowCenter);
 
   const handleWidthInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setWidthInput(Number( e.target.value));
+    const num = Number(e.target.value);
+    setWidthInput(num);
   };
 
   const handleCenterInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -23,7 +24,7 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
     e.preventDefault();
     let v = widthInput;
     if (!isNaN(v)) {
-      v = Math.min(Math.max(v, 1), 400);
+      v = Math.min(Math.max(v, 1), 5000);
       onWindowChange(v, null);
     }
   };
@@ -32,7 +33,7 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
     e.preventDefault();
     let v = centerInput;
     if (!isNaN(v)) {
-      v = Math.min(Math.max(v, -1000), 50);
+      v = Math.min(Math.max(v, -1000), 1000);
       onWindowChange(null, v);
     }
   };
@@ -46,9 +47,11 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
 
         <form onSubmit={handleCenterSubmit}  className="w-1/3">
           <input
-            type="text"
+            type="number"
             value={centerInput}
             onChange={handleCenterInputChange}
+            min="-1000"
+            max="1000"
             className="text-white rounded-md p-1 border w-full"
             />
         </form>
@@ -74,17 +77,19 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
 
         <form onSubmit={handleWidthSubmit} className="w-1/3">
           <input
-            type="text"
+            type="number"
             value={widthInput}
+            min="1"
+            max="5000"
             onChange={handleWidthInputChange}
-            className="border text-white p-1 rounded-md w-full"
+          className="border text-white p-1 rounded-md w-full"
             />
         </form>
         </div>
         <input
           type="range"
           min="1"
-          max="2000"
+          max="5000"
           step="1"
           value={windowWidth}
           onChange={(e) => {

@@ -3,6 +3,7 @@ import {
   RenderingEngine,
   cache,
   init as csInit,
+  getRenderingEngine,
   setVolumesForViewports,
   volumeLoader
 } from '@cornerstonejs/core';
@@ -44,6 +45,9 @@ const toolGroupSpecificRepresentationConfig = {
     [csToolsEnums.SegmentationRepresentations.Labelmap]: DEFAULT_SEGMENTATION_CONFIG
   },
 };
+const viewportId1 = 'CT_NIFTI_AXIAL';
+const viewportId2 = 'CT_NIFTI_SAGITTAL';
+const viewportId3 = 'CT_NIFTI_CORONAL';
 
 export async function renderVisualization(ref1: HTMLDivElement | null, ref2: HTMLDivElement | null, ref3: HTMLDivElement | null, convertedColorLUT: ColorLUT, clabelId: string, setLoading: React.Dispatch<React.SetStateAction<boolean>>): Promise<VisualizationRenderReturnType | undefined> {
   cache.purgeCache();
@@ -66,9 +70,6 @@ export async function renderVisualization(ref1: HTMLDivElement | null, ref2: HTM
   const mainNiftiURL = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${pants_id}/ct.nii.gz?download=true`
   const volumeId = 'nifti:' + mainNiftiURL;
 
-  const viewportId1 = 'CT_NIFTI_AXIAL';
-  const viewportId2 = 'CT_NIFTI_SAGITTAL';
-  const viewportId3 = 'CT_NIFTI_CORONAL';
   
   const volume = await volumeLoader.createAndCacheVolume(volumeId);
   await volume.load(); // ✅ 真正加载数据
@@ -284,9 +285,10 @@ function createRenderingEngine() {
   }
 
   const newEngine = new RenderingEngine(renderingEngineId);
+  
   currentRenderingEngine = newEngine;
   return newEngine;
-}
+}   
 
 
 
@@ -296,6 +298,18 @@ export function setVisibilities(segRepUIDs: string[], checkState: boolean[]){
     segmentation.config.visibility.setSegmentVisibility(toolGroupId, uid, i, checkState[i]);
   }
 };
+
+export function setZoom(zoomValue: number){
+  const engine = getRenderingEngine(renderingEngineId);
+  [viewportId1, viewportId2, viewportId3].forEach((viewportId) => {
+      if (engine){
+        const viewport = engine.getViewport(viewportId);
+        viewport.setZoom(zoomValue);
+        console.log(viewport.getZoom());
+        viewport.render();
+      }
+    })
+}
 
 
 export function setToolGroupOpacity(opacityValue: number){

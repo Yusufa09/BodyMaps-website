@@ -9,7 +9,7 @@ export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElemen
   console.log(clabelId)
   
   const nv = new Niivue({
-    sliceType: SLICE_TYPE.RENDER,
+    sliceType: SLICE_TYPE.RENDER, 
   });
   if (!canvasRef.current) return { nv, nvImage: null, cmapCopy: {R: [], G: [], B: [], I: [], A: []} };
   nv.attachToCanvas(canvasRef.current);
