@@ -667,7 +667,7 @@ def api_facets():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
-@api_blueprint.route("/random", methods=['GETk'])
+@api_blueprint.route("/random", methods=['GET'])
 def api_random_topk_rotate_norand():
     """
     推薦：完整資料優先 → 取 Top-K(預設100) → 環狀位移 → 可排除最近看過
@@ -732,9 +732,9 @@ def api_random_topk_rotate_norand():
         pick = idx[offset:offset + min(n, len(topk))]
         sub = topk.iloc[pick]
 
-        items = [_row_to_item(r) for _, r in sub.iterrows()]
+        items = [row_to_item(r) for _, r in sub.iterrows()]
         resp = jsonify({
-            "items": _clean_json_list(items),
+            "items": clean_json_list(items),
             "total": int(len(df)),
             "meta": {"k": int(len(topk)), "used_recent": used_recent, "offset": int(offset)}
         })
