@@ -686,8 +686,8 @@ def api_random_topk_rotate_norand():
         if len(df_full) == 0:
             df_full = base_df
         df = df_full.sort_values(
-            by=["__spacing_sum","__shape_sum","__case_sortkey"],
-            ascending=[True, False, True],
+            by=["__shape_sum"],
+            ascending=[False],
             na_position="last",
             kind="mergesort",
         )
