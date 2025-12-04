@@ -164,6 +164,7 @@ function Checked({
 						const rgb = color
 							? `rgb(${color[0]}, ${color[1]}, ${color[2]})`
 							: "gray";
+						if (organ == "pancreas") return null;
 						return (
 							<div className={`flex items-center gap-2 ${level == 0 ? "pl-8" : "pl-9"} `} key={idx}>
 								<div className="cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center" />
