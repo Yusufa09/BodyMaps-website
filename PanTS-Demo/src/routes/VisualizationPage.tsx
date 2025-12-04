@@ -11,7 +11,7 @@ import {
 	IconZoom
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import RotatingModelLoader from "../components/Loading";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
@@ -80,7 +80,6 @@ function VisualizationPage() {
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(false);
 
-	const navigate = useNavigate();
 	// const location = useLocation();
 
 	// Load and render visualization on first render
