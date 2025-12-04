@@ -291,7 +291,7 @@ function VisualizationPage() {
 	};
 
 	const navBack = () => {
-		navigate("/");
+		navigate("/home.html");
 	};
 	// const PREVIEW_IDS = [1, 17, 30, 35, 121];
 

@@ -691,7 +691,7 @@ def api_random_topk_rotate_norand():
             na_position="last",
             kind="mergesort",
         )
-        df = df.drop_duplicates(subset="__shape_sum", keep="first")
+        # df = df.drop_duplicates(subset="__shape_sum", keep="first")
         if len(df) == 0:
             return jsonify({"items": [], "total": 0, "meta": {"k": 0, "used_recent": 0}}), 200
 
@@ -716,7 +716,30 @@ def api_random_topk_rotate_norand():
                 df2 = df[mask]
                 if len(df2): df = df2
 
-        topk = df.iloc[:K]
+        wanted_ids = [
+            900,
+            9391,
+            8854,
+            3844,
+            9860,
+            3186,
+            7352,
+            2431,
+            2035,
+            7362,
+            9397,
+            6291,
+            9015,
+            9552,
+            9076,
+            2322,
+            4246,
+            1019,
+            4454,
+            7973
+        ]
+        wanted_ids = [get_panTS_id(w) for w in wanted_ids]
+        topk = df.loc[df["PanTS ID"].isin(wanted_ids)]
         if len(topk) == 0:
             return jsonify({"items": [], "total": 0, "meta": {"k": 0, "used_recent": used_recent}}), 200
 
@@ -730,7 +753,7 @@ def api_random_topk_rotate_norand():
 
         # idx = list(range(len(topk))) + list(range(len(topk)))
         # pick = idx[offset:offset + min(n, len(topk))]
-        # sub = topk.iloc[pick]
+        # sub = topk.iloc[pick] 
 
         items = [row_to_item(r) for _, r in topk.iterrows()]
         resp = jsonify({

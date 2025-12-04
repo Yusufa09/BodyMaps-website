@@ -11,6 +11,7 @@ export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElemen
   const nv = new Niivue({
     sliceType: SLICE_TYPE.RENDER, 
   });
+  nv.setInterpolation(true);
 
   nv.mouseMove = (x: number, y: number): void => {
     x *= nv.uiData.dpr!
