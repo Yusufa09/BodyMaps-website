@@ -32,4 +32,4 @@ tzlocal==5.2
 urllib3==2.2.3
 Werkzeug==3.0.3
 wheel==0.45.1
-flupg
+# flupg
