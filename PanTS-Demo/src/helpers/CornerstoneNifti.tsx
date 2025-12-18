@@ -75,12 +75,7 @@ export async function renderVisualization(ref1: HTMLDivElement | null, ref2: HTM
   const renderingEngine = createRenderingEngine();
 
   // const mainNiftiURL = `${APP_CONSTANTS.API_ORIGIN}/api/get-main-nifti/${clabelId}`;
-  let pants_id = clabelId;
-  if (!pants_id.includes("PanTS")) {
-    pants_id = getPanTSId(pants_id);
-  }
-
-  let case_id = Number(clabelId.replace("PanTS_", ""));
+  const pants_id = getPanTSId(clabelId);
   const mainNiftiURL = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${pants_id}/ct.nii.gz?download=true`
   const volumeId = 'nifti:' + mainNiftiURL;
 
@@ -89,7 +84,7 @@ export async function renderVisualization(ref1: HTMLDivElement | null, ref2: HTM
   await volume.load(); // ✅ 真正加载数据
 
     
-  const segmentationURL = `${APP_CONSTANTS.API_ORIGIN}/api/get-segmentations/${case_id}`;
+  const segmentationURL = `${APP_CONSTANTS.API_ORIGIN}/api/get-segmentations/${clabelId}`;
   const combined_labels_Id = 'nifti:' + segmentationURL;
   const combined_labels = await volumeLoader.createAndCacheVolume(combined_labels_Id);
   setLoading(false);

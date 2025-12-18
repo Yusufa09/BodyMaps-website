@@ -2880,7 +2880,8 @@ function makeCard(it) {
   saveRecent(id);
 
   // 導到 React viewer，caseId 就是卡片上的 id（例如 PanTS_00007362）
-  const url = new URL(`/case/${encodeURIComponent(id)}`, window.location.origin);
+  
+  const url = new URL(`/case/${encodeURIComponent(Number(id.replace("PanTS_", "")))}`, window.location.origin);
   window.location.href = url.toString();
 };
 
@@ -3264,7 +3265,7 @@ function showPreparing(on) {
 
 function openViewer(id) {
   // 直接導向 React viewer 的 route：/case/:caseId
-  const url = new URL(`/case/${encodeURIComponent(id)}`, window.location.origin);
+  const url = new URL(`/case/${Number(id.replace("PanTS_", ""))}`, window.location.origin);
   window.location.href = url.toString();
 
   // 舊的 overlay viewer 不再使用，所以整段都不執行
