@@ -418,53 +418,184 @@ def download_segmentation_zip(id):
 import threading
 import time
 
+inference_jobs = {}  # {session_id: {status, model, error, session_path, zip_path}}
+
+
+def _set_inference_job(session_id, **kwargs):
+    current = inference_jobs.get(session_id, {})
+    current.update(kwargs)
+    inference_jobs[session_id] = current
+
+
+def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_path=None):
+    session_path = os.path.join(SESSIONS_DIR, session_id)
+    os.makedirs(session_path, exist_ok=True)
+
+    if ct_file is not None:
+        input_path = os.path.join(session_path, ct_file.filename)
+        ct_file.save(input_path)
+    elif server_input_path:
+        if not os.path.exists(server_input_path):
+            return jsonify({"error": f"INPUT_SERVER_PATH does not exist: {server_input_path}"}), 400
+        input_path = os.path.join(session_path, os.path.basename(server_input_path))
+        import shutil
+        shutil.copy2(server_input_path, input_path)
+    else:
+        return jsonify({"error": "No CT file provided. Send MAIN_NIFTI or INPUT_SERVER_PATH."}), 400
+
+    _set_inference_job(
+        session_id,
+        status="running",
+        model=model_name,
+        error=None,
+        session_path=session_path,
+        zip_path=os.path.join(session_path, "auto_masks.zip"),
+    )
+
+    def do_segmentation_and_zip():
+        time.sleep(10)
+        try:
+            output_mask_dir = run_auto_segmentation(input_path, session_dir=session_path, model=model_name)
+
+            if output_mask_dir is None or not os.path.exists(output_mask_dir):
+                msg = f"Auto segmentation failed for session {session_id}"
+                print(f"❌ {msg}")
+                _set_inference_job(session_id, status="failed", error=msg)
+                return
+
+            zip_path = os.path.join(session_path, "auto_masks.zip")
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                for filename in os.listdir(output_mask_dir):
+                    include_csv = (model_name == "ePAI") and filename.endswith(".csv")
+                    include_mask = filename.endswith(".nii.gz")
+                    if include_mask or include_csv:
+                        abs_path = os.path.join(output_mask_dir, filename)
+                        zipf.write(abs_path, arcname=filename)
+
+            if session_id in progress_tracker:
+                start_time, expected_time, _ = progress_tracker[session_id]
+                progress_tracker[session_id] = (start_time, expected_time, True)
+                progress_tracker.pop(session_id, None)
+
+            _set_inference_job(session_id, status="completed", error=None, zip_path=zip_path)
+            print(f"✅ Finished segmentation and zipping for session {session_id}")
+        except Exception as e:
+            print(f"❌ Exception while processing session {session_id}: {e}")
+            _set_inference_job(session_id, status="failed", error=str(e))
+
+    threading.Thread(target=do_segmentation_and_zip, daemon=True).start()
+    print("[Server] auto_segment request is returning now")
+    return jsonify({"message": "Segmentation started", "session_id": session_id}), 200
+
 @api_blueprint.route('/auto_segment/<session_id>', methods=['POST'])
 def auto_segment(session_id):
 
-    if 'MAIN_NIFTI' not in request.files:
-        return jsonify({"error": "No CT file provided"}), 400
-
-    ct_file = request.files['MAIN_NIFTI']
     model_name = request.form.get("MODEL_NAME", None)
+    server_input_path = request.form.get("INPUT_SERVER_PATH", None)
+
+    ct_file = request.files.get('MAIN_NIFTI')
 
     # Check if model name is valid
     if model_name is None:
         return {"error": "MODEL_NAME is required."}, 400
-    # Step 1: Create a unique session directory to store CT and mask
-    session_path = os.path.join(SESSIONS_DIR, session_id)
-    os.makedirs(session_path, exist_ok=True)
+    return _start_auto_segmentation(
+        session_id=session_id,
+        model_name=model_name,
+        ct_file=ct_file,
+        server_input_path=server_input_path,
+    )
 
-    # Step 2: Save CT file under this session
-    input_path = os.path.join(session_path, ct_file.filename)
-    ct_file.save(input_path)
 
-    def do_segmentation_and_zip():
-        time.sleep(10)
-        output_mask_dir = run_auto_segmentation(input_path, session_dir=session_path, model=model_name)
+@api_blueprint.route('/run-epai-inference', methods=['POST'])
+@api_blueprint.route('/run-inference', methods=['POST'])
+def run_epai_inference():
+    """
+    Runs ePAI inference with either:
+      1) multipart file: MAIN_NIFTI
+      2) server path: INPUT_SERVER_PATH
 
-        if output_mask_dir is None or not os.path.exists(output_mask_dir):
-            print(f"❌ Auto segmentation failed for session {session_id}")
-            return ##the logic still needs to be improved in the future. when output_mask_dir is none here, no error output at user's end
+    Optional fields:
+      - session_id
+      - uploaded_filename (used with chunked upload output in sessions/inference/<session_id>/)
+    """
+    payload = request.get_json(silent=True) or {}
 
-        zip_path = os.path.join(session_path, "auto_masks.zip")
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for filename in os.listdir(output_mask_dir):
-                if filename.endswith(".nii.gz"):
-                    abs_path = os.path.join(output_mask_dir, filename)
-                    zipf.write(abs_path, arcname=filename)
+    def _pick_text(*keys):
+        for key in keys:
+            value = request.form.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for key in keys:
+            value = payload.get(key) if isinstance(payload, dict) else None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
-        start_time, expected_time, _ = progress_tracker[session_id]
-        progress_tracker[session_id] = (start_time, expected_time, True)
-        progress_tracker.pop(session_id, None)
+    session_id = _pick_text("session_id", "SESSION_ID", "sessionId") or str(uuid.uuid4())
+    uploaded_filename = _pick_text("uploaded_filename", "output_filename", "filename")
+    input_server_path = _pick_text("INPUT_SERVER_PATH", "input_server_path", "server_path", "path")
+    ct_file = (
+        request.files.get('MAIN_NIFTI')
+        or request.files.get('file')
+        or request.files.get('ct')
+        or request.files.get('ct_file')
+    )
 
-        
-        
-        print(f"✅ Finished segmentation and zipping for session {session_id}")
+    if not input_server_path and uploaded_filename:
+        candidate = os.path.join(Constants.SESSIONS_DIR_NAME, "inference", session_id, uploaded_filename)
+        if os.path.exists(candidate):
+            input_server_path = candidate
 
-    #threading.Thread(target=do_segmentation_and_zip).start()
-    threading.Thread(target=do_segmentation_and_zip, ).start()
-    print("[Server] auto_segment request is returning now")
-    return jsonify({"message": "Segmentation started"}), 200
+    if not input_server_path and ct_file is None:
+        inference_root = os.path.join(Constants.SESSIONS_DIR_NAME, "inference")
+        infer_dir = os.path.join(inference_root, session_id)
+
+        if not os.path.isdir(infer_dir) and os.path.isdir(inference_root):
+            candidate_dirs = []
+            for dirname in os.listdir(inference_root):
+                if dirname == session_id or dirname.startswith(session_id) or session_id.startswith(dirname):
+                    full_dir = os.path.join(inference_root, dirname)
+                    if os.path.isdir(full_dir):
+                        candidate_dirs.append(full_dir)
+            if len(candidate_dirs) == 1:
+                infer_dir = candidate_dirs[0]
+
+        if os.path.isdir(infer_dir):
+            nii_candidates = []
+            for root, _, files in os.walk(infer_dir):
+                for name in files:
+                    lower = name.lower()
+                    if lower.endswith(".nii.gz") or lower.endswith(".nii"):
+                        nii_candidates.append(os.path.join(root, name))
+
+            if nii_candidates:
+                preferred = [p for p in nii_candidates if os.path.basename(p).lower() in {"ct.nii.gz", "ct.nii"}]
+                pool = preferred if preferred else nii_candidates
+                pool.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                input_server_path = pool[0]
+
+    return _start_auto_segmentation(
+        session_id=session_id,
+        model_name="ePAI",
+        ct_file=ct_file,
+        server_input_path=input_server_path,
+    )
+
+
+@api_blueprint.route('/inference-status/<session_id>', methods=['GET'])
+def get_inference_status(session_id):
+    job = inference_jobs.get(session_id)
+    if job is None:
+        return jsonify({"status": "not_found", "session_id": session_id}), 404
+    return jsonify({"session_id": session_id, **job}), 200
+
+
+@api_blueprint.route('/check-inference-status', methods=['GET'])
+def check_inference_status_legacy():
+    session_id = request.args.get("session_id") or request.args.get("sessionId")
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    return get_inference_status(session_id)
 
 
 
@@ -539,11 +670,40 @@ def finalize_upload():
         session_id = request.form.get("session_id")
         total_chunks = int(request.form.get("total_chunks"))
         output_filename = request.form.get("output_filename", "inference_input.gz")
+        requested_bdmap_id = request.form.get("bdmap_id") or request.form.get("case_id")
+
+        if requested_bdmap_id and requested_bdmap_id.strip():
+            bdmap_id = requested_bdmap_id.strip()
+            if not bdmap_id.startswith("BDMAP_"):
+                bdmap_id = f"BDMAP_{bdmap_id}"
+        else:
+            digits = "".join(ch for ch in (session_id or "") if ch.isdigit())
+            if len(digits) < 8:
+                fallback_digits = f"{(uuid.uuid5(uuid.NAMESPACE_DNS, session_id or str(uuid.uuid4())).int % (10 ** 8)):08d}"
+                digits = (digits + fallback_digits)[:8]
+            else:
+                digits = digits[:8]
+            bdmap_id = f"BDMAP_{digits}"
 
         # New base path: sessions/inference/<session_id>/
         base_path = os.path.join(Constants.SESSIONS_DIR_NAME, "inference", session_id)
         os.makedirs(base_path, exist_ok=True)
-        final_path = os.path.join(base_path, output_filename)
+
+        normalized_output = output_filename.strip()
+        lower_name = normalized_output.lower()
+        if lower_name.endswith(".nii.gz"):
+            target_filename = "ct.nii.gz"
+        elif lower_name.endswith(".nii"):
+            target_filename = "ct.nii"
+        else:
+            target_filename = normalized_output
+
+        target_dir = base_path
+        if target_filename.lower().endswith(".nii") or target_filename.lower().endswith(".nii.gz"):
+            target_dir = os.path.join(base_path, bdmap_id)
+            os.makedirs(target_dir, exist_ok=True)
+
+        final_path = os.path.join(target_dir, target_filename)
 
         # Combine chunks
         temp_folder = os.path.join("/tmp/uploads", session_id)
@@ -558,7 +718,13 @@ def finalize_upload():
             os.remove(os.path.join(temp_folder, f"chunk-{i}"))
         os.rmdir(temp_folder)
 
-        return jsonify({"status": "combined", "path": final_path})
+        uploaded_filename = os.path.relpath(final_path, base_path)
+        return jsonify({
+            "status": "combined",
+            "path": final_path,
+            "bdmap_id": bdmap_id,
+            "uploaded_filename": uploaded_filename,
+        })
     except Exception as e:
         print(f"❌ Finalize upload error: {e}")
         return jsonify({"error": str(e)}), 500
