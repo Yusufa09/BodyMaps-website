@@ -114,7 +114,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   }, []);
 
   // Step 0: Upload files to server
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk
+  const CHUNK_SIZE = 512 * 1024; // 512 KB per chunk (safer for strict proxy limits)
 
   const handleUploadClick = async () => {
     if (selectedFiles.length === 0) return alert("No files selected!");
@@ -143,6 +143,10 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           method: "POST",
           body: formData,
         });
+
+        if (res.status === 413) {
+          throw new Error("Upload chunk too large for server/proxy limit (HTTP 413). Please reduce proxy upload limit or keep smaller chunks.");
+        }
 
         const data = await parseApiResponse(res);
         if (!res.ok) throw new Error(data.error || "Chunk upload failed");
