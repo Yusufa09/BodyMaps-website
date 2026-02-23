@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './UploadPage.css';
 import {
   IconPlus,
@@ -9,10 +9,32 @@ import { API_BASE } from '../helpers/constants';
 
 interface UploadPageProps {}
 
+const parseApiResponse = async (res: Response): Promise<any> => {
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+
+  const text = await res.text();
+  const shortBody = text.slice(0, 200).replace(/\s+/g, " ").trim();
+  throw new Error(
+    `Expected JSON but got ${contentType || "unknown content-type"} (HTTP ${res.status}). Body: ${shortBody}`
+  );
+};
+
 const UploadPage: React.FC<UploadPageProps> = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const inferencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [, setMessage] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [serverPath, setServerPath] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
+  const [uploadedFilename, setUploadedFilename] = useState<string>("");
+  const [bdmapId, setBdmapId] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [inferenceProgress, setInferenceProgress] = useState<number>(0);
+  const [isInferencing, setIsInferencing] = useState<boolean>(false);
   // const [, setInferenceStarted] = useState(false);
   // const [, setZipFilename] = useState<string | null>(null);
 
@@ -41,6 +63,56 @@ const UploadPage: React.FC<UploadPageProps> = () => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const stopInferencePolling = () => {
+    if (inferencePollRef.current) {
+      clearInterval(inferencePollRef.current);
+      inferencePollRef.current = null;
+    }
+  };
+
+  const startInferencePolling = (sid: string) => {
+    stopInferencePolling();
+    setIsInferencing(true);
+    setInferenceProgress(5);
+
+    inferencePollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/inference-status/${sid}`);
+        const data = await parseApiResponse(res);
+
+        if (!res.ok) {
+          throw new Error(data.error || data.status || "Status check failed");
+        }
+
+        const status = (data.status || "").toLowerCase();
+        if (status === "completed") {
+          setInferenceProgress(100);
+          setIsInferencing(false);
+          stopInferencePolling();
+          return;
+        }
+
+        if (status === "failed") {
+          setIsInferencing(false);
+          stopInferencePolling();
+          setMessage(`Inference failed${data.error ? `: ${data.error}` : ""}`);
+          return;
+        }
+
+        setInferenceProgress(prev => Math.min(95, Math.max(prev + 7, 10)));
+      } catch (err) {
+        setInferenceProgress(prev => Math.min(95, Math.max(prev + 3, 10)));
+        console.error(err);
+      }
+    }, 2500);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopInferencePolling();
+    };
+  }, []);
+
   // Step 0: Upload files to server
   const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk
 
@@ -51,6 +123,8 @@ const UploadPage: React.FC<UploadPageProps> = () => {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const sessionId = crypto.randomUUID(); // generate unique session ID
 
+    setIsUploading(true);
+    setUploadProgress(0);
     setMessage(`Uploading ${file.name} in ${totalChunks} chunks...`);
 
     try {
@@ -70,8 +144,9 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           body: formData,
         });
 
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         if (!res.ok) throw new Error(data.error || "Chunk upload failed");
+        setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
       }
 
       setMessage("All chunks uploaded, combining...");
@@ -83,16 +158,135 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           session_id: sessionId,
           total_chunks: totalChunks.toString(),
           output_filename: file.name,
+          ...(bdmapId.trim() ? { bdmap_id: bdmapId.trim() } : {}),
         }),
       });
 
-      const finalizeData = await finalizeRes.json();
+      const finalizeData = await parseApiResponse(finalizeRes);
       if (!finalizeRes.ok) throw new Error(finalizeData.error);
 
-      setMessage(`Upload complete! File ready at ${finalizeData.path}`);
+      setSessionId(sessionId);
+      setUploadedFilename(finalizeData.uploaded_filename || file.name);
+      setServerPath(finalizeData.path || "");
+      setUploadProgress(100);
+      setMessage(`Upload complete! File ready at ${finalizeData.path}${finalizeData.bdmap_id ? ` (Case: ${finalizeData.bdmap_id})` : ""}`);
     } catch (err) {
       console.error(err);
       setMessage("Upload failed: " + (err as Error).message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRunEpaiInference = async () => {
+    if (!sessionId && !serverPath && selectedFiles.length === 0) {
+      alert("Provide a server file path or upload/select a file first.");
+      return;
+    }
+
+    setMessage("Starting ePAI inference...");
+    setInferenceProgress(0);
+    setIsInferencing(true);
+
+    const formData = new FormData();
+    formData.append("session_id", sessionId || crypto.randomUUID());
+
+    if (serverPath.trim()) {
+      formData.append("INPUT_SERVER_PATH", serverPath.trim());
+    } else if (uploadedFilename) {
+      formData.append("uploaded_filename", uploadedFilename);
+    } else if (selectedFiles.length > 0) {
+      formData.append("MAIN_NIFTI", selectedFiles[0]);
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/run-epai-inference`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error || "Failed to start ePAI inference");
+
+      const sid = data.session_id || formData.get("session_id")?.toString() || "";
+      setSessionId(sid);
+      setMessage(`ePAI inference started. Session: ${sid}`);
+      if (sid) {
+        startInferencePolling(sid);
+      }
+    } catch (err) {
+      console.error(err);
+      setIsInferencing(false);
+      setMessage("Failed to start inference: " + (err as Error).message);
+    }
+  };
+
+  const handleCheckStatus = async () => {
+    if (!sessionId) {
+      setMessage("No session id yet.");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/inference-status/${sessionId}`);
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error || data.status || "Status check failed");
+      setMessage(`Status: ${data.status}${data.error ? ` (${data.error})` : ""}`);
+      const status = (data.status || "").toLowerCase();
+      if (status === "completed") {
+        setInferenceProgress(100);
+        setIsInferencing(false);
+        stopInferencePolling();
+      } else if (status === "running") {
+        if (!isInferencing) {
+          startInferencePolling(sessionId);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Status check failed: " + (err as Error).message);
+    }
+  };
+
+  const handleDownloadResult = async () => {
+    if (!sessionId) {
+      setMessage("No session id yet.");
+      return;
+    }
+
+    setMessage("Preparing download...");
+
+    try {
+      const statusRes = await fetch(`${API_BASE}/api/inference-status/${sessionId}`);
+      const statusData = await parseApiResponse(statusRes);
+      if (!statusRes.ok) throw new Error(statusData.error || statusData.status || "Status check failed");
+      if (statusData.status !== "completed") {
+        setMessage(`Status: ${statusData.status || "unknown"}. Please wait until completed.`);
+        return;
+      }
+
+      setInferenceProgress(100);
+      setIsInferencing(false);
+      stopInferencePolling();
+
+      const resultRes = await fetch(`${API_BASE}/api/get_result/${sessionId}`);
+      if (!resultRes.ok) {
+        const maybeJson = await parseApiResponse(resultRes);
+        throw new Error(maybeJson?.error || "Failed to download result zip");
+      }
+
+      const blob = await resultRes.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `epai_output_${sessionId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+
+      setMessage("Download started: zip includes combined_labels.nii.gz and output.csv");
+    } catch (err) {
+      console.error(err);
+      setMessage("Download failed: " + (err as Error).message);
     }
   };
 
@@ -210,6 +404,53 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           <IconArrowUp />
         </button>
       </div>
+
+      <div className="upload-bar" style={{ marginTop: "0.75rem" }}>
+        <input
+          type="text"
+          className="upload-input"
+          placeholder="Or input server CT path: /path/to/xxx.nii.gz"
+          value={serverPath}
+          onChange={(e) => setServerPath(e.target.value)}
+        />
+      </div>
+
+      <div className="upload-bar" style={{ marginTop: "0.75rem" }}>
+        <input
+          type="text"
+          className="upload-input"
+          placeholder="Optional BDMAP ID (e.g. BDMAP_00000338 or 00000338)"
+          value={bdmapId}
+          onChange={(e) => setBdmapId(e.target.value)}
+        />
+      </div>
+
+      <div className="upload-actions">
+        <button className="upload-button" onClick={handleRunEpaiInference}>Run ePAI</button>
+        <button className="upload-button" onClick={handleCheckStatus}>Check Status</button>
+        <button className="upload-button" onClick={handleDownloadResult}>Download</button>
+      </div>
+
+      {(isUploading || uploadProgress > 0) && (
+        <div className="progress-wrap">
+          <p className="upload-meta">Upload Progress: {uploadProgress}%</p>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${uploadProgress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {(isInferencing || inferenceProgress > 0) && (
+        <div className="progress-wrap">
+          <p className="upload-meta">Inference Progress: {inferenceProgress}%</p>
+          <div className="progress-track">
+            <div className="progress-fill progress-fill-inference" style={{ width: `${inferenceProgress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {sessionId && <p className="upload-meta">Session: {sessionId}</p>}
+      {message && <p className="upload-meta">{message}</p>}
     </div>
   );
 };
