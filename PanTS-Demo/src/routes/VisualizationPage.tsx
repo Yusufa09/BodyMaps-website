@@ -16,6 +16,7 @@ import RotatingModelLoader from "../components/Loading";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
+import SnakeGame from "../components/SnakeGame/SnakeGame";
 import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
@@ -465,7 +466,12 @@ function VisualizationPage() {
           :
           null
         } */}
-				{loading ? <RotatingModelLoader /> : null}
+				{loading ? <div className="flex flex-col gap-40 items-center justify-center">
+					<div className="w-fit z-99">
+					<SnakeGame />
+					</div>
+					<RotatingModelLoader />
+				</div> : null}
 				<div
 					className="visualization-container"
 					ref={VisualizationContainer_ref}
