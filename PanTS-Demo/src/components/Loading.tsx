@@ -48,7 +48,7 @@ const RotatingModelLoader: React.FC = () => {
 	}, []);
 
 	return (
-		<div className="relative w-screen h-screen" ref={containerRef}>
+		<div className="absolute top-60 left-0 flex p-20 w-screen h-screen" ref={containerRef}>
 			{organ_arr[organ] ? (
 				<>
 					{/* 3D Canvas */}
@@ -67,6 +67,9 @@ const RotatingModelLoader: React.FC = () => {
 					{/* Overlay */}
 					<div className="absolute inset-0 flex items-center justify-center h-screen w-screen text-white">
 						<div className="flex flex-col items-center justify-center gap-2 mt-64">
+							{/* <div className="z-99">
+								<SnakeGame />
+							</div> */}
 							<h2 className="text-2xl font-semibold text-center z-2">
 								Preparing data...
 							</h2>
