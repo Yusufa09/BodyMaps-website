@@ -28,14 +28,24 @@ import {
 	segmentation_categories,
 	segmentation_category_colors,
 } from "../helpers/constants";
-import { filenameToName } from "../helpers/utils";
+import { filenameToName, getPanTSId } from "../helpers/utils";
 import { type CheckBoxData, type LastClicked, type NColorMap } from "../types";
 import "./VisualizationPage.css";
 
 function VisualizationPage() {
 	// References and state
 	const params = useParams();
-	const pantsCase = params.caseId ?? "1";
+	const pantsCase = params.caseId;
+	const sessionId = params.sessionId;
+
+	// Determine URLs — session inference results vs. HuggingFace dataset
+	const displayId = pantsCase ?? sessionId ?? "1";
+	const ctUrl = sessionId
+		? `${API_BASE}/api/session-ct/${sessionId}`
+		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${p}/ct.nii.gz?download=true`; })();
+	const segUrl = sessionId
+		? `${API_BASE}/api/session-segmentation/${sessionId}`
+		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${p}/combined_labels.nii.gz?download=true`; })();
 
 	const axial_ref = useRef<HTMLDivElement>(null);
 	const sagittal_ref = useRef<HTMLDivElement>(null);
@@ -125,7 +135,8 @@ function VisualizationPage() {
 				sagittal_ref.current,
 				coronal_ref.current,
 				cmap,
-				pantsCase,
+				ctUrl,
+				segUrl,
 				setLoading
 			);
 
@@ -143,7 +154,7 @@ function VisualizationPage() {
 
 			const { nv, cmapCopy } = await create3DVolume(
 				render_ref,
-				pantsCase,
+				segUrl,
 				labelColorMap
 			);
 			cmapRef.current = cmapCopy;
@@ -152,7 +163,8 @@ function VisualizationPage() {
 
 		setup();
 	}, [
-		pantsCase,
+		ctUrl,
+		segUrl,
 		axial_ref,
 		sagittal_ref,
 		coronal_ref,
@@ -257,13 +269,16 @@ function VisualizationPage() {
 	};
 
 	const handleDownloadClick = async () => {
-		const response = await fetch(`${API_BASE}/api/download/${pantsCase}`);
+		const downloadUrl = sessionId
+			? `${API_BASE}/api/get_result/${sessionId}`
+			: `${API_BASE}/api/download/${pantsCase}`;
+		const response = await fetch(downloadUrl);
 		const blob = await response.blob();
 		const url = window.URL.createObjectURL(blob);
 
 		const link = document.createElement("a");
 		link.href = url;
-		link.download = `${pantsCase}_segmentations.zip`;
+		link.download = `${displayId}_segmentations.zip`;
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
@@ -327,7 +342,7 @@ function VisualizationPage() {
 										</div>
 										{zoomMode ? null : (
 											
-											<div className="text-white font-bold text-xl col-span-4">{`Case ID: ${pantsCase}`}</div>
+											<div className="text-white font-bold text-xl col-span-4">{`Case: ${displayId}`}</div>
 										)}
 										<div></div>
 									</div>
@@ -520,7 +535,7 @@ function VisualizationPage() {
 
 			{showReportScreen && (
 				<ReportScreen
-					id={pantsCase}
+					id={displayId}
 					onClose={() => setShowReportScreen(false)}
 				/>
 			)}

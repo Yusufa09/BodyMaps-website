@@ -507,6 +507,7 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
         status="running",
         model=model_name,
         error=None,
+        ct_path=input_path,
         session_path=session_path,
         zip_path=os.path.join(session_path, "auto_masks.zip"),
     )
@@ -535,7 +536,8 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
                 progress_tracker[session_id] = (start_time, expected_time, True)
                 progress_tracker.pop(session_id, None)
 
-            _set_inference_job(session_id, status="completed", error=None, zip_path=zip_path)
+            _set_inference_job(session_id, status="completed", error=None,
+                               zip_path=zip_path, output_mask_dir=output_mask_dir)
             print(f"✅ Finished segmentation and zipping for session {session_id}")
         except Exception as e:
             print(f"❌ Exception while processing session {session_id}: {e}")
@@ -876,6 +878,33 @@ def get_result(session_id):
         download_name="auto_masks.zip"
     )
     response.headers["X-Session-Id"] = session_id
+    return response
+
+
+@api_blueprint.route('/session-ct/<session_id>', methods=['GET'])
+def get_session_ct(session_id):
+    job = inference_jobs.get(session_id, {})
+    ct_path = job.get("ct_path")
+    if not ct_path or not os.path.exists(ct_path):
+        return jsonify({"error": "CT file not found for session"}), 404
+    response = make_response(send_file(ct_path, mimetype='application/gzip'))
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    response.headers['Content-Encoding'] = 'gzip'
+    return response
+
+
+@api_blueprint.route('/session-segmentation/<session_id>', methods=['GET'])
+def get_session_segmentation(session_id):
+    job = inference_jobs.get(session_id, {})
+    output_mask_dir = job.get("output_mask_dir")
+    if not output_mask_dir:
+        return jsonify({"error": "Segmentation not ready for session"}), 404
+    seg_path = os.path.join(output_mask_dir, "combined_labels.nii.gz")
+    if not os.path.exists(seg_path):
+        return jsonify({"error": f"combined_labels.nii.gz not found at {seg_path}"}), 404
+    response = make_response(send_file(seg_path, mimetype='application/gzip'))
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    response.headers['Content-Encoding'] = 'gzip'
     return response
 
 #

@@ -21,6 +21,7 @@ function App() {
 							{/* <Route path="/data" element={<DataPage />} /> */}
 							{/* <Route path="/:type/:page" element={<Homepage />} /> */}
 							<Route path="/case/:caseId" element={<VisualizationPage />} />
+							<Route path="/session/:sessionId" element={<VisualizationPage />} />
 							<Route path="/test" element={<RotatingHeartLoader />} />
 							<Route path="/upload" element={<UploadPage />} />
 						</Routes>

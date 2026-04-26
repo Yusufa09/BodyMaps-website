@@ -5,10 +5,14 @@ import re
 import csv
 import shlex
 import shutil
+import threading
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Only one model inference runs at a time to avoid GPU OOM
+_gpu_lock = threading.Lock()
 
 def get_least_used_gpu(default_gpu=None):
     if default_gpu is None:
@@ -51,21 +55,98 @@ def _resolve_conda_activate_path():
 def run_auto_segmentation(input_path, session_dir, model):
     """
     Dispatch to the appropriate model inference function.
+    Serialized via _gpu_lock so concurrent requests queue instead of OOM-ing.
     Returns the output directory path on success, raises on failure.
     """
-    if model == 'ePAI':
-        conda_path = _resolve_conda_activate_path()
-        return _run_epai_inference(
-            input_path=input_path,
-            session_dir=session_dir,
-            conda_path=conda_path,
-            epai_env_name=os.getenv("CONDA_ENV_EPAI", "epai"),
-            fallback_script_path=os.getenv("EPAI_SCRIPT_PATH", ""),
-        )
-    elif model == 'SuPreM':
-        return _run_suprem_inference(input_path=input_path, session_dir=session_dir)
-    else:
-        raise ValueError(f"Unknown model: {model}")
+    with _gpu_lock:
+        if model == 'ePAI':
+            conda_path = _resolve_conda_activate_path()
+            return _run_epai_inference(
+                input_path=input_path,
+                session_dir=session_dir,
+                conda_path=conda_path,
+                epai_env_name=os.getenv("CONDA_ENV_EPAI", "epai"),
+                fallback_script_path=os.getenv("EPAI_SCRIPT_PATH", ""),
+            )
+        elif model == 'SuPreM':
+            return _run_suprem_inference(input_path=input_path, session_dir=session_dir)
+        else:
+            raise ValueError(f"Unknown model: {model}")
+
+
+# Viewer label scheme (constants.ts segmentation_categories, 1-indexed)
+_VIEWER_LABELS = {
+    "adrenal_gland_left": 1, "adrenal_gland_right": 2, "aorta": 3,
+    "bladder": 4, "celiac_artery": 5, "colon": 6, "common_bile_duct": 7,
+    "duodenum": 8, "femur_left": 9, "femur_right": 10, "gall_bladder": 11,
+    "kidney_left": 12, "kidney_right": 13, "liver": 14,
+    "lung_left": 15, "lung_right": 16, "pancreas": 17,
+    "pancreas_body": 18, "pancreas_head": 19, "pancreas_tail": 20,
+    "pancreatic_duct": 21, "pancreatic_lesion": 22, "postcava": 23,
+    "prostate": 24, "spleen": 25, "stomach": 26,
+    "superior_mesenteric_artery": 27, "veins": 28,
+}
+
+# ePAI model label → viewer label
+_EPAI_TO_VIEWER = {
+    1: _VIEWER_LABELS["aorta"],
+    2: _VIEWER_LABELS["adrenal_gland_left"],
+    3: _VIEWER_LABELS["adrenal_gland_right"],
+    4: _VIEWER_LABELS["common_bile_duct"],
+    5: _VIEWER_LABELS["celiac_artery"],
+    6: _VIEWER_LABELS["colon"],
+    7: _VIEWER_LABELS["duodenum"],
+    8: _VIEWER_LABELS["gall_bladder"],
+    9: _VIEWER_LABELS["postcava"],
+    10: _VIEWER_LABELS["kidney_left"],
+    11: _VIEWER_LABELS["kidney_right"],
+    12: _VIEWER_LABELS["liver"],
+    13: _VIEWER_LABELS["pancreas"],
+    14: _VIEWER_LABELS["pancreatic_duct"],
+    15: _VIEWER_LABELS["superior_mesenteric_artery"],
+    17: _VIEWER_LABELS["spleen"],
+    18: _VIEWER_LABELS["stomach"],
+    19: _VIEWER_LABELS["veins"],
+    23: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pdac
+    24: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_cyst
+    25: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pnet
+}
+
+# SuPreM model label → viewer label
+_SUPREM_TO_VIEWER = {
+    1: _VIEWER_LABELS["spleen"],
+    2: _VIEWER_LABELS["kidney_right"],
+    3: _VIEWER_LABELS["kidney_left"],
+    4: _VIEWER_LABELS["gall_bladder"],
+    6: _VIEWER_LABELS["liver"],
+    7: _VIEWER_LABELS["stomach"],
+    8: _VIEWER_LABELS["aorta"],
+    9: _VIEWER_LABELS["postcava"],
+    11: _VIEWER_LABELS["pancreas"],
+    12: _VIEWER_LABELS["adrenal_gland_right"],
+    13: _VIEWER_LABELS["adrenal_gland_left"],
+    14: _VIEWER_LABELS["duodenum"],
+    16: _VIEWER_LABELS["lung_right"],
+    17: _VIEWER_LABELS["lung_left"],
+    18: _VIEWER_LABELS["colon"],
+    21: _VIEWER_LABELS["bladder"],
+    22: _VIEWER_LABELS["prostate"],
+    23: _VIEWER_LABELS["femur_left"],
+    24: _VIEWER_LABELS["femur_right"],
+    25: _VIEWER_LABELS["celiac_artery"],
+}
+
+
+def _remap_combined_labels(nii_path: str, label_map: dict) -> None:
+    """Remap integer labels in a NIfTI file in-place to match the viewer's scheme."""
+    import nibabel as nib
+    import numpy as np
+    img = nib.load(nii_path)
+    data = np.asarray(img.dataobj).copy()
+    remapped = np.zeros_like(data)
+    for src, dst in label_map.items():
+        remapped[data == src] = dst
+    nib.save(nib.Nifti1Image(remapped, img.affine, img.header), nii_path)
 
 
 def _normalize_case_id(input_path_or_filename: str) -> str:
@@ -255,6 +336,7 @@ def _run_epai_inference(input_path: str, session_dir: str, conda_path: str, epai
     combined_label_path = os.path.join(output_ct_dir, "combined_labels.nii.gz")
     shutil.copy2(case_pred, combined_label_path)
     shutil.copy2(output_csv_path, os.path.join(output_ct_dir, "output.csv"))
+    _remap_combined_labels(combined_label_path, _EPAI_TO_VIEWER)
 
     return output_ct_dir
 
@@ -315,6 +397,10 @@ def _run_suprem_inference(input_path: str, session_dir: str) -> str:
     case_output = os.path.join(output_dir, "ct")
     if not os.path.isdir(case_output):
         raise RuntimeError(f"SuPreM output directory not found: {case_output}")
+
+    combined_label_path = os.path.join(case_output, "combined_labels.nii.gz")
+    if os.path.exists(combined_label_path):
+        _remap_combined_labels(combined_label_path, _SUPREM_TO_VIEWER)
 
     return case_output
 

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './UploadPage.css';
 import {
   IconPlus,
   IconArrowUp,
-  // IconDownload
 } from "@tabler/icons-react";
 import { API_BASE } from '../helpers/constants';
 
@@ -23,6 +23,7 @@ const parseApiResponse = async (res: Response): Promise<any> => {
 };
 
 const UploadPage: React.FC<UploadPageProps> = () => {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const inferencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -35,6 +36,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [inferenceProgress, setInferenceProgress] = useState<number>(0);
   const [isInferencing, setIsInferencing] = useState<boolean>(false);
+  const [inferenceCompleted, setInferenceCompleted] = useState<boolean>(false);
   const [selectedModel, setSelectedModel] = useState<"ePAI" | "SuPreM">("ePAI");
 
   const allowedExtensions = [".nii", ".nii.gz"];
@@ -87,6 +89,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
         if (status === "completed") {
           setInferenceProgress(100);
           setIsInferencing(false);
+          setInferenceCompleted(true);
           stopInferencePolling();
           return;
         }
@@ -242,6 +245,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
       if (status === "completed") {
         setInferenceProgress(100);
         setIsInferencing(false);
+        setInferenceCompleted(true);
         stopInferencePolling();
       } else if (status === "running") {
         if (!isInferencing) {
@@ -465,6 +469,17 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           <div className="progress-track">
             <div className="progress-fill progress-fill-inference" style={{ width: `${inferenceProgress}%` }} />
           </div>
+        </div>
+      )}
+
+      {inferenceCompleted && sessionId && (
+        <div className="result-actions">
+          <button className="upload-button result-button" onClick={() => navigate(`/session/${sessionId}`)}>
+            View Visualization
+          </button>
+          <button className="upload-button result-button" onClick={handleDownloadResult}>
+            Download Results
+          </button>
         </div>
       )}
 

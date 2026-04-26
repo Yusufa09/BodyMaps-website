@@ -155,3 +155,16 @@
 .progress-fill-inference {
   background: #2d6cdf;
 }
+
+.result-actions {
+  margin-top: 1rem;
+  width: 100%;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.result-button {
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+}

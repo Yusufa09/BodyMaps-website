@@ -1,13 +1,10 @@
 import type { Color } from '@cornerstonejs/core/types';
 import { Niivue, NVImage, SLICE_TYPE } from '@niivue/niivue';
 import type { NColorMap } from '../types';
-import { getPanTSId } from './utils';
 
 
 
-export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElement | null>, clabelId: string, colorLUT: {[key: number]: Color}): Promise<{nv: Niivue, nvImage: NVImage | null, cmapCopy: NColorMap}> {
-  console.log(clabelId)
-  
+export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElement | null>, segUrl: string, colorLUT: {[key: number]: Color}): Promise<{nv: Niivue, nvImage: NVImage | null, cmapCopy: NColorMap}> {
   const nv = new Niivue({
     sliceType: SLICE_TYPE.RENDER, 
   });
@@ -39,11 +36,9 @@ export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElemen
   if (!canvasRef.current) return { nv, nvImage: null, cmapCopy: {R: [], G: [], B: [], I: [], A: []} };
   nv.attachToCanvas(canvasRef.current);
 
-  const pantsId = getPanTSId(clabelId);
-
   const nvImage = await NVImage.loadFromUrl({
     name: "combined_labels.nii.gz",
-    url: `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${pantsId}/combined_labels.nii.gz?download=true`,
+    url: segUrl,
   });
 
   const labelIds = Object.keys(colorLUT).map(id => parseInt(id));

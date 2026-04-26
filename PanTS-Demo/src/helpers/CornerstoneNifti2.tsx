@@ -4,7 +4,6 @@ import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init 
 import * as cornerstoneTools from '@cornerstonejs/tools';
 import { init as cornerstoneToolsInit } from '@cornerstonejs/tools';
 import { SegmentationRepresentations } from "@cornerstonejs/tools/enums";
-import { getPanTSId } from "./utils";
 
 type viewportIdTypes = 'CT_NIFTI_AXIAL' | 'CT_NIFTI_SAGITTAL' | 'CT_NIFTI_CORONAL';
 
@@ -65,14 +64,13 @@ function getReferenceLineSlabThicknessControlsOn(viewportId: viewportIdTypes) {
         [viewportId1, viewportId2, viewportId3].indexOf(viewportId);
     return index !== -1;
 }
-export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, clabelId: string, setLoading: React.Dispatch<React.SetStateAction<boolean>>) {
+export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, ctUrl: string, segUrl: string, setLoading: React.Dispatch<React.SetStateAction<boolean>>) {
     coreInit();
     niftiImageLoaderInit();
     cornerstoneToolsInit();
 
-    const pants_id = getPanTSId(clabelId);
-    const mainNiftiURL = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${pants_id}/ct.nii.gz?download=true`
-    const segmentationURL = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${pants_id}/combined_labels.nii.gz?download=true`;
+    const mainNiftiURL = ctUrl;
+    const segmentationURL = segUrl;
     ToolGroupManager.destroyToolGroup(toolGroupId);
     const toolGroup = ToolGroupManager.createToolGroup(toolGroupId);
     if (!toolGroup) {
