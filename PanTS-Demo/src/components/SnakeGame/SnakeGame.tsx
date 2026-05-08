@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const COLs = 32;
-const ROWs = 32;
-const DEFAULT_LENGTH = 10;
+const COLs = 20;
+const ROWs = 20;
+const DEFAULT_LENGTH = 8;
 
 const UP = Symbol("up");
 const DOWN = Symbol("down");
@@ -205,7 +205,7 @@ function SnakeGame() {
             const isSnakeBody = snakeCoordinatesMap.current.has(coords);
             const isHead = headPos === coords;
 
-            let className = "w-3 h-3 flex justify-center items-center border-l border-t border-white border-dotted";
+            let className = "w-5 h-5 flex justify-center items-center border-l border-t border-white border-dotted";
             if (isFood) {
                 className += " bg-red-600 z-10 border-red-600 rounded-md shadow-md";
             }

@@ -6,60 +6,68 @@ type Props = {
   opacityValue: number;
   handleOpacityOnSliderChange: (value: React.ChangeEvent<HTMLInputElement>) => void;
   handleOpacityOnFormSubmit: (value: number) => void;
+  setShowOrganDetails: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowTaskDetails: React.Dispatch<React.SetStateAction<boolean>>;
 }
 export default function OpacitySlider({
   opacityValue,
   handleOpacityOnSliderChange,
-  handleOpacityOnFormSubmit
+  setShowOrganDetails,
+  setShowTaskDetails
 }: Props) {
-  const [textValue, setTextValue] = useState(opacityValue);
+  const [_textValue, setTextValue] = useState(opacityValue);
 
   // Sync input field when external opacityValue changes
   useEffect(() => {
     setTextValue(opacityValue);
   }, [opacityValue]);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTextValue(Number(e.target.value));
-  };
+  // const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   setTextValue(Number(e.target.value));
+  // };
 
-  const handleOpacitySubmit = (e: React.ChangeEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    let v = Number(textValue);
-    if (isNaN(v)) return;
+  // const handleOpacitySubmit = (e: React.ChangeEvent<HTMLFormElement>) => {
+  //   e.preventDefault();
+  //   let v = Number(textValue);
+  //   if (isNaN(v)) return;
 
-    // Clamp value between 0 and 100
-    v = Math.max(0, Math.min(100, v));
-    setTextValue(v);
-    handleOpacityOnFormSubmit(v);
-  };
+  //   // Clamp value between 0 and 100
+  //   v = Math.max(0, Math.min(100, v));
+  //   setTextValue(v);
+  //   handleOpacityOnFormSubmit(v);
+  // };
 
 
 
   return (
-    <div className="windowing-slider">
-      <div className="flex gap-1 flex-col justify-center items-center border">
-        <div className="flex justify-between w-full items-center">
-          
-        <div style={{ color: 'white' }}>Label Opacity</div>
-        <form onSubmit={handleOpacitySubmit} className="w-1/3">
-          <input
-            type="text"
-            value={textValue}
-            onChange={handleTextChange}
-            className="text-white rounded-md border p-1 w-full"
-            />
-        </form>
+    <div className="windowing-slider w-full flex flex-col gap-2 border-2 rounded-sm bg-gray-900 shadow-md">
+      <div className="bg-gray-600 w-full h-8 flex items-center justify-center text-center rounded-t-sm text-white">Label Settings</div>
+      <div className="pb-2 pl-4 pr-4 flex flex-col gap-2">
+
+        <div className="flex gap-1 flex-col justify-center items-center">
+          <div className="flex justify-between w-full items-center">
+            <div className="text-white">Label Opacity</div>
           </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          className="w-full"
-          value={opacityValue}
-          onChange={handleOpacityOnSliderChange}
-        />
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="s"
+            className="w-full"
+            value={opacityValue}
+            onChange={handleOpacityOnSliderChange}
+          />
+        </div>
+        <button
+          className="text-white relative !p-1 text-2xs !bg-gray-700 hover:!border-white"
+          onClick={() => {
+            setShowOrganDetails((prev) => !prev);
+            setShowTaskDetails((prev) => !prev);
+          }}
+        >
+          Class Map
+        </button>
       </div>
     </div>
   );

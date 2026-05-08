@@ -118,6 +118,7 @@ function Checked({
 						<input
 							type="checkbox"
 							className="w-4 h-4 text-blue-600 !bg-gray-700 border-gray-600 !rounded-sm focus:ring-blue-600 ring-offset-gray-800 focus:ring-2"
+							aria-label="s"
 							checked={partialToggled}
 							onChange={() => {
 								updateToggle(!partialToggled);
@@ -236,7 +237,7 @@ function OrganCheckbox({
 
 	return (
 		<div
-			className={`flex w-2xs h-screen flex-col gap-4 p-3 z-5 absolute top-0 left-0 bg-[#0f0824] duration-100 transition-all ${
+			className={`flex w-2xs h-screen flex-col gap-4 p-3 z-5 absolute top-0 left-0 bg-[#0f0824] duration-200 transition-all ${
 				showOrganDetails ? "translate-x-0" : "-translate-x-full"
 			} origin-left`}
 		>

@@ -21,7 +21,7 @@ import {
 	setVisibilities,
 	toggleCrosshairTool,
 } from "../helpers/CornerstoneNifti2";
-import { create3DVolume, updateVisibilities } from "../helpers/NiiVueNifti";
+import { create3DVolume, create3DVolumeFew, updateVisibilities } from "../helpers/NiiVueNifti";
 import {
 	API_BASE,
 	APP_CONSTANTS,
@@ -37,18 +37,13 @@ function VisualizationPage() {
 	const params = useParams();
 	const pantsCase = params.caseId;
 	const sessionId = params.sessionId;
-	const reconstructionId = params.reconstructionId;
 
-	// Determine URLs — reconstruction session, inference session, or HuggingFace dataset
-	const displayId = pantsCase ?? sessionId ?? reconstructionId ?? "1";
-	const ctUrl = reconstructionId
-		? `${API_BASE}/api/session-reconstruction/${reconstructionId}`
-		: sessionId
+	// Determine URLs — session inference results vs. HuggingFace dataset
+	const displayId = pantsCase ?? sessionId ?? "1";
+	const ctUrl = sessionId
 		? `${API_BASE}/api/session-ct/${sessionId}`
 		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${p}/ct.nii.gz?download=true`; })();
-	const segUrl: string | undefined = reconstructionId
-		? undefined
-		: sessionId
+	const segUrl = sessionId
 		? `${API_BASE}/api/session-segmentation/${sessionId}`
 		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${p}/combined_labels.nii.gz?download=true`; })();
 
@@ -156,17 +151,13 @@ function VisualizationPage() {
 			setRenderingEngine(renderingEngine);
 			setViewportIds(viewportIds);
 			setVolumeId(volumeId);
-			toggleCrosshairTool(true);
-
-			if (segUrl) {
-				const { nv, cmapCopy } = await create3DVolume(
-					render_ref,
-					segUrl,
-					labelColorMap
-				);
-				cmapRef.current = cmapCopy;
-				setNV(nv);
-			}
+			const { nv, cmapCopy } = await create3DVolume(
+				render_ref,
+				segUrl,
+				labelColorMap
+			);
+			cmapRef.current = cmapCopy;
+			setNV(nv);
 		};
 
 		setup();
@@ -251,6 +242,13 @@ function VisualizationPage() {
 				true, // ID=0 background 永远可见
 				...checkBoxData.map((item) => !!checkState[item.id]),
 			];
+			const visible = checkStateArr.map((item, idx) => item === true ? idx-1 : null).filter((item) => item !== null);
+			if (visible.length === 2) {
+				visible.splice(0, 1);
+				console.log(segmentation_categories[visible[0]])
+				create3DVolumeFew(render_ref, labelColorMap, getPanTSId(pantsCase ?? "1"), visible);
+				return;
+			}
 			setVisibilities(checkStateArr);
 			updateVisibilities(NV, checkStateArr, sessionKey, cmapRef.current);
 		}
@@ -362,6 +360,8 @@ function VisualizationPage() {
 													handleOpacityOnSliderChange
 												}
 												handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
+												setShowOrganDetails={setShowOrganDetails}
+												setShowTaskDetails={setShowTaskDetails}
 											/>
 
 											<WindowingSlider
@@ -529,17 +529,15 @@ function VisualizationPage() {
 
 			{/* Fixed bottom bar for organ selection */}
 
-			{!reconstructionId && (
-				<OrganCheckbox
-					setCheckState={setCheckState}
-					checkState={checkState}
-					sessionId={sessionKey}
-					setShowTaskDetails={setShowTaskDetails}
-					setShowOrganDetails={setShowOrganDetails}
-					showOrganDetails={showOrganDetails}
-					labelColorMap={labelColorMap}
-				/>
-			)}
+			<OrganCheckbox
+				setCheckState={setCheckState}
+				checkState={checkState}
+				sessionId={sessionKey}
+				setShowTaskDetails={setShowTaskDetails}
+				setShowOrganDetails={setShowOrganDetails}
+				showOrganDetails={showOrganDetails}
+				labelColorMap={labelColorMap}
+			/>
 
 			{showReportScreen && (
 				<ReportScreen
