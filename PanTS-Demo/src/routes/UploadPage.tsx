@@ -37,7 +37,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   const [inferenceProgress, setInferenceProgress] = useState<number>(0);
   const [isInferencing, setIsInferencing] = useState<boolean>(false);
   const [inferenceCompleted, setInferenceCompleted] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<"ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "">("");
+  const [selectedModel, setSelectedModel] = useState<"ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "">("");
 
   const allowedExtensions = [".nii", ".nii.gz"];
 
@@ -434,7 +434,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           ref={fileInputRef}
           type="file"
           multiple
-          accept="*/*"
+          accept=".nii,.gz"
           style={{ display: 'none' }}
           onChange={handleFileSelect}
         />
@@ -477,7 +477,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
         <select
           className="model-select"
           value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value as "ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "")}
+          onChange={(e) => setSelectedModel(e.target.value as "ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "")}
         >
           <option value="" disabled>Select a model</option>
           <option value="ePAI">ePAI</option>
@@ -485,6 +485,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
           <option value="MedFormer">MedFormer</option>
           <option value="R-Super">R-Super</option>
           <option value="OpenVAE">OpenVAE</option>
+          <option value="Atlas-Net">Atlas-Net</option>
         </select>
         <button className="upload-button" onClick={handleRunEpaiInference} disabled={!selectedModel}>Run</button>
         <button className="upload-button" onClick={handleCheckStatus}>Check Status</button>
