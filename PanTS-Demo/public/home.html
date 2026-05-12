@@ -1228,71 +1228,6 @@ body.viewer-open .hero {
 
 <!-- ✅ Search Section -->
 <!-- ✅ Search Section -->
-<div class="searchBarWrapper">
-  <section class="hero">
-    <div class="container">
-      <div class="searchRail">
-        <!-- ID -->
-        <div class="segment pop" id="popID">
-          <label>ID</label>
-          <div class="inputWrap">
-            <input id="q" class="input popBtn" placeholder="Search Case ID or keyword…" autocomplete="off">
-            <button id="clearBtn" class="clearBtn" title="Clear" aria-label="Clear">×</button>
-          </div>
-
-          <div class="popPanel" style="width:520px">
-            <div class="group">
-              <div class="groupTitle">Recommended IDs</div>
-              <div id="idReco" class="chips"></div>
-            </div>
-            <div class="group">
-              <div class="groupTitle">Recently viewed</div>
-              <div id="idRecent" class="chips">
-                <span class="recMeta">No recent</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- STA -->
-        <div class="segment pop" id="popSTA">
-          <button class="fakeInput popBtn" type="button">
-            <span id="staSummary">Any tumor · Any sex · Any age</span>
-          </button>
-
-          <div class="popPanel" style="max-width:560px">
-            <div class="group">
-              <div class="groupTitle">Tumor</div>
-              <div id="tumorChips" class="chips">
-                <button class="chip" data-tumor="">Any</button>
-                <button class="chip flat" data-tumor="1">Tumor</button>
-                <button class="chip flat" data-tumor="0">No tumor</button>
-              </div>
-            </div>
-
-            <div class="group">
-              <div class="groupTitle">Sex <span class="hint">Multi-Select</span></div>
-              <div id="sexChips" class="chipArea flat">
-                <button class="chip" data-sex="">Any</button>
-                <button class="chip" data-sex="M">Male</button>
-                <button class="chip" data-sex="F">Female</button>
-                <button class="chip" data-sex="U">Unknown</button>
-              </div>
-            </div>
-
-            <div class="group">
-              <div class="groupTitle">Age <span class="hint">Multi-Select</span></div>
-              <div id="ageChips" class="chipArea flat"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Search button -->
-        <button id="searchBtn" class="btnSearch" type="button">Search</button>
-      </div> <!-- /.searchRail -->
-    </div>   <!-- /.container -->
-  </section>
-</div> <!-- /.searchBarWrapper -->
 
 
 <style>
@@ -1978,12 +1913,12 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
 
     <!-- Inference Upload -->
     <section class="panel container" id="inferenceSection" style="margin:12px auto;padding:20px 24px;max-width:520px;">
-      <div style="text-align:center;font-size:1.1rem;font-weight:700;margin-bottom:14px;color:var(--ink)">Run Inference on Your CT</div>
+      <div style="text-align:center;font-size:1.1rem;font-weight:700;margin-bottom:14px;color:var(--ink)">Upload Your CT Scan</div>
       <!-- Drop zone -->
       <div id="inferDropZone" style="border:2px dashed var(--sub);border-radius:12px;padding:28px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;transition:border-color .2s,background .2s;background:rgba(255,255,255,0.03)">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" id="inferIcon" style="color:var(--sub)"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
         <span id="inferFileName" style="font-size:.85rem;color:var(--sub);text-align:center">Click or drag to upload<br><span style="font-size:.75rem;opacity:.7">.nii or .nii.gz</span></span>
-        <input id="inferFileInput" type="file" accept=".nii,.nii.gz" style="display:none">
+        <input id="inferFileInput" type="file" accept=".nii,.gz" style="display:none">
       </div>
       <!-- Model + Run -->
       <div style="display:flex;gap:8px;margin-top:10px">
@@ -1994,6 +1929,7 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
           <option value="MedFormer">MedFormer</option>
           <option value="R-Super">R-Super</option>
           <option value="OpenVAE">OpenVAE</option>
+          <option value="Atlas-Net">Atlas-Net</option>
         </select>
         <button id="inferRunBtn" disabled style="padding:8px 20px;border-radius:8px;font-size:.85rem;font-weight:700;border:none;background:var(--line);color:var(--sub);cursor:not-allowed;transition:background .2s,color .2s">Run</button>
       </div>
@@ -2006,6 +1942,73 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
       </div>
       <div id="inferError" style="display:none;font-size:.75rem;color:var(--bad);text-align:center;margin-top:8px"></div>
     </section>
+
+    <!-- Search -->
+    <div class="searchBarWrapper" style="margin-top:16px">
+      <section class="hero">
+        <div class="container">
+          <div class="searchRail">
+            <!-- ID -->
+            <div class="segment pop" id="popID">
+              <label>ID</label>
+              <div class="inputWrap">
+                <input id="q" class="input popBtn" placeholder="Search Case ID or keyword…" autocomplete="off">
+                <button id="clearBtn" class="clearBtn" title="Clear" aria-label="Clear">×</button>
+              </div>
+
+              <div class="popPanel" style="width:520px">
+                <div class="group">
+                  <div class="groupTitle">Recommended IDs</div>
+                  <div id="idReco" class="chips"></div>
+                </div>
+                <div class="group">
+                  <div class="groupTitle">Recently viewed</div>
+                  <div id="idRecent" class="chips">
+                    <span class="recMeta">No recent</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- STA -->
+            <div class="segment pop" id="popSTA">
+              <button class="fakeInput popBtn" type="button">
+                <span id="staSummary">Any tumor · Any sex · Any age</span>
+              </button>
+
+              <div class="popPanel" style="max-width:560px">
+                <div class="group">
+                  <div class="groupTitle">Tumor</div>
+                  <div id="tumorChips" class="chips">
+                    <button class="chip" data-tumor="">Any</button>
+                    <button class="chip flat" data-tumor="1">Tumor</button>
+                    <button class="chip flat" data-tumor="0">No tumor</button>
+                  </div>
+                </div>
+
+                <div class="group">
+                  <div class="groupTitle">Sex <span class="hint">Multi-Select</span></div>
+                  <div id="sexChips" class="chipArea flat">
+                    <button class="chip" data-sex="">Any</button>
+                    <button class="chip" data-sex="M">Male</button>
+                    <button class="chip" data-sex="F">Female</button>
+                    <button class="chip" data-sex="U">Unknown</button>
+                  </div>
+                </div>
+
+                <div class="group">
+                  <div class="groupTitle">Age <span class="hint">Multi-Select</span></div>
+                  <div id="ageChips" class="chipArea flat"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Search button -->
+            <button id="searchBtn" class="btnSearch" type="button">Search</button>
+          </div> <!-- /.searchRail -->
+        </div>   <!-- /.container -->
+      </section>
+    </div> <!-- /.searchBarWrapper -->
 
     <!-- Browse -->
     <section class="panel container recBar" id="recBar">

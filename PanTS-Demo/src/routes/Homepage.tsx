@@ -72,7 +72,7 @@ export default function Homepage() {
 			<div className="flex flex-col gap-3 p-4 justify-center items-center w-screen">
 				{/* Upload & inference */}
 				<div className="w-full max-w-md">
-					<div className="text-lg font-bold mb-3 text-center">Run Inference on Your CT</div>
+					<div className="text-lg font-bold mb-3 text-center">Upload Your CT Scan</div>
 					<InferenceUpload />
 				</div>
 				<hr className="w-screen opacity-30" />

@@ -5,7 +5,7 @@ import { API_BASE } from "../helpers/constants";
 
 const CHUNK_SIZE = 256 * 1024;
 
-type Model = "ePAI" | "SuPreM" | "MedFormer" | "R-Super" | "OpenVAE" | "";
+type Model = "ePAI" | "SuPreM" | "MedFormer" | "R-Super" | "OpenVAE" | "Atlas-Net" | "";
 
 const parseApiResponse = async (res: Response): Promise<any> => {
   const contentType = res.headers.get("content-type") || "";
@@ -161,7 +161,7 @@ export default function InferenceUpload() {
             <span className="text-xs text-gray-500">.nii or .nii.gz</span>
           </>
         )}
-        <input ref={fileInputRef} type="file" accept=".nii,.nii.gz" className="hidden" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept=".nii,.gz" className="hidden" onChange={handleFileChange} />
       </div>
 
       {/* Model selector + Run */}
@@ -178,6 +178,7 @@ export default function InferenceUpload() {
           <option value="MedFormer">MedFormer</option>
           <option value="R-Super">R-Super</option>
           <option value="OpenVAE">OpenVAE</option>
+          <option value="Atlas-Net">Atlas-Net</option>
         </select>
         <button
           className={`px-5 py-2 rounded-lg text-sm font-bold transition-colors
