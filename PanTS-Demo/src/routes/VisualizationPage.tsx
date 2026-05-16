@@ -457,12 +457,20 @@ function VisualizationPage() {
           :
           null
         } */}
-				{loading ? <div className="flex flex-col gap-20 items-center justify-center">
-					<div className="w-fit z-99">
-					<SnakeGame />
-					</div>
-					<RotatingModelLoader />
-				</div> : null}
+				{loading ? (
+					pantsCase ? (
+						<div className="flex flex-col gap-20 items-center justify-center">
+							<div className="w-fit z-99">
+								<SnakeGame />
+							</div>
+							<RotatingModelLoader />
+						</div>
+					) : (
+						<div className="flex items-center justify-center h-full">
+							<RotatingModelLoader />
+						</div>
+					)
+				) : null}
 				<div
 					className="visualization-container"
 					ref={VisualizationContainer_ref}

@@ -76,6 +76,14 @@ def run_auto_segmentation(input_path, session_dir, model):
             return _run_medformer_inference(input_path=input_path, session_dir=session_dir)
         elif model == 'R-Super':
             return _run_rsuper_inference(input_path=input_path, session_dir=session_dir)
+        elif model == 'Atlas-Net':
+            conda_path = _resolve_conda_activate_path()
+            return _run_atlasnet_inference(
+                input_path=input_path,
+                session_dir=session_dir,
+                conda_path=conda_path,
+                atlasnet_env_name=os.getenv("CONDA_ENV_ATLASNET", "epai"),
+            )
         else:
             raise ValueError(f"Unknown model: {model}")
 
@@ -113,6 +121,35 @@ _EPAI_TO_VIEWER = {
     17: _VIEWER_LABELS["spleen"],
     18: _VIEWER_LABELS["stomach"],
     19: _VIEWER_LABELS["veins"],
+    23: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pdac
+    24: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_cyst
+    25: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pnet
+}
+
+# Atlas-Net model label → viewer label (from dataset.json)
+_ATLASNET_TO_VIEWER = {
+    1: _VIEWER_LABELS["aorta"],
+    2: _VIEWER_LABELS["adrenal_gland_left"],
+    3: _VIEWER_LABELS["adrenal_gland_right"],
+    4: _VIEWER_LABELS["common_bile_duct"],
+    5: _VIEWER_LABELS["celiac_artery"],       # celiac_aa
+    6: _VIEWER_LABELS["colon"],
+    7: _VIEWER_LABELS["duodenum"],
+    8: _VIEWER_LABELS["gall_bladder"],
+    9: _VIEWER_LABELS["postcava"],
+    10: _VIEWER_LABELS["kidney_left"],
+    11: _VIEWER_LABELS["kidney_right"],
+    12: _VIEWER_LABELS["liver"],
+    13: _VIEWER_LABELS["pancreas"],
+    14: _VIEWER_LABELS["pancreatic_duct"],
+    15: _VIEWER_LABELS["superior_mesenteric_artery"],
+    16: _VIEWER_LABELS["colon"],              # intestine (small intestine)
+    17: _VIEWER_LABELS["spleen"],
+    18: _VIEWER_LABELS["stomach"],
+    19: _VIEWER_LABELS["veins"],
+    20: _VIEWER_LABELS["veins"],              # renal_vein_left
+    21: _VIEWER_LABELS["veins"],              # renal_vein_right
+    # 22: cbd_stent — no viewer equivalent
     23: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pdac
     24: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_cyst
     25: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pnet
@@ -624,6 +661,70 @@ def _run_rsuper_inference(input_path: str, session_dir: str) -> str:
         raise RuntimeError(f"R-Super combined_labels not created at {combined_label_path}")
 
     return output_dir
+
+
+def _run_atlasnet_inference(input_path: str, session_dir: str, conda_path: str, atlasnet_env_name: str) -> str:
+    case_id = _normalize_case_id(input_path)
+
+    atlasnet_workspace = os.path.join(session_dir, "atlasnet")
+    input_dir = os.path.join(atlasnet_workspace, "eval")
+    save_dir = os.path.join(atlasnet_workspace, "out")
+    os.makedirs(input_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
+
+    nnunet_input = os.path.join(input_dir, f"{case_id}_0000.nii.gz")
+    if os.path.lexists(nnunet_input):
+        os.remove(nnunet_input)
+    os.symlink(input_path, nnunet_input)
+
+    ckpt_path = os.getenv(
+        "ATLASNET_CKPT_PATH",
+        "/home/visitor/atlasnet/model/nnUNet_results/Dataset001_ATLASNet/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    )
+    nnunet_raw = os.getenv("ATLASNET_NNUNET_RAW", "/home/visitor/atlasnet/nnUNet/raw")
+    nnunet_preprocessed = os.getenv("ATLASNET_NNUNET_PREPROCESSED", "/home/visitor/atlasnet/nnUNet/preprocessed")
+    nnunet_results = os.getenv("ATLASNET_NNUNET_RESULTS", "/home/visitor/atlasnet/nnUNet/results")
+
+    selected_gpu = get_least_used_gpu()
+    conda_exe = shutil.which("conda")
+    if not conda_exe:
+        raise RuntimeError("Could not find conda. Set CONDA_ACTIVATE_PATH or ensure `conda` is on PATH.")
+
+    full_cmd = (
+        f"nnUNet_raw={shlex.quote(nnunet_raw)} "
+        f"nnUNet_preprocessed={shlex.quote(nnunet_preprocessed)} "
+        f"nnUNet_results={shlex.quote(nnunet_results)} "
+        f"CUDA_VISIBLE_DEVICES={shlex.quote(selected_gpu)} "
+        f"{shlex.quote(conda_exe)} run -n {shlex.quote(atlasnet_env_name)} "
+        f"nnUNetv2_predict_from_modelfolder "
+        f"-i {shlex.quote(input_dir)} "
+        f"-o {shlex.quote(save_dir)} "
+        f"-m {shlex.quote(ckpt_path)} "
+        f"-f all "
+        f"-npp 2 -nps 2 "
+        f"-chk checkpoint_final.pth"
+    )
+
+    print(f"[INFO] Running Atlas-Net command for case {case_id}")
+    print(full_cmd)
+    try:
+        subprocess.run(full_cmd, shell=True, executable="/bin/bash", check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Atlas-Net inference command failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
+        ) from e
+
+    case_pred = os.path.join(save_dir, f"{case_id}.nii.gz")
+    if not os.path.exists(case_pred):
+        raise RuntimeError(f"Expected Atlas-Net output not found: {case_pred}")
+
+    output_ct_dir = os.path.join(session_dir, "outputs", "ct")
+    os.makedirs(output_ct_dir, exist_ok=True)
+    combined_label_path = os.path.join(output_ct_dir, "combined_labels.nii.gz")
+    shutil.copy2(case_pred, combined_label_path)
+    _remap_combined_labels(combined_label_path, _ATLASNET_TO_VIEWER)
+
+    return output_ct_dir
 
 
 def _is_truthy(value: str) -> bool:
