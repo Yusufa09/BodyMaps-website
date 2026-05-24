@@ -1911,114 +1911,368 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
 </style>
 
 
-    <!-- Inference Upload -->
-    <section class="panel container" id="inferenceSection" style="margin:12px auto;padding:20px 24px;max-width:520px;">
-      <div style="text-align:center;font-size:1.1rem;font-weight:700;margin-bottom:14px;color:var(--ink)">Upload Your CT Scan</div>
-      <!-- Drop zone -->
-      <div id="inferDropZone" style="border:2px dashed var(--sub);border-radius:12px;padding:28px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;transition:border-color .2s,background .2s;background:rgba(255,255,255,0.03)">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" id="inferIcon" style="color:var(--sub)"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-        <span id="inferFileName" style="font-size:.85rem;color:var(--sub);text-align:center">Click or drag to upload<br><span style="font-size:.75rem;opacity:.7">.nii or .nii.gz</span></span>
-        <input id="inferFileInput" type="file" accept=".nii,.gz" style="display:none">
-      </div>
-      <!-- Model + Run -->
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <select id="inferModelSelect" style="flex:1;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.85rem;cursor:pointer">
-          <option value="" disabled selected>Select a model</option>
-          <option value="ePAI">ePAI</option>
-          <option value="SuPreM">SuPreM</option>
-          <option value="MedFormer">MedFormer</option>
-          <option value="R-Super">R-Super</option>
-          <option value="OpenVAE">OpenVAE</option>
-          <option value="Atlas-Net">Atlas-Net</option>
-        </select>
-        <button id="inferRunBtn" disabled style="padding:8px 20px;border-radius:8px;font-size:.85rem;font-weight:700;border:none;background:var(--line);color:var(--sub);cursor:not-allowed;transition:background .2s,color .2s">Run</button>
-      </div>
-      <!-- Progress -->
-      <div id="inferProgress" style="display:none;margin-top:10px">
-        <div id="inferProgressLabel" style="font-size:.75rem;color:var(--sub);text-align:center;margin-bottom:4px"></div>
-        <div style="width:100%;height:6px;background:var(--line);border-radius:9999px;overflow:hidden">
-          <div id="inferProgressBar" style="height:100%;width:0;background:var(--brand);border-radius:9999px;transition:width .3s ease"></div>
+    <!-- ====== ChatGPT-style unified hero ====== -->
+    <style>
+    /* ── Hero wrapper ── */
+    .chatHero {
+      padding: 48px 24px 32px;
+      text-align: center;
+    }
+    .chatHeroTitle {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--ink);
+      margin: 0 0 8px;
+      letter-spacing: -0.3px;
+    }
+    .chatHeroSub {
+      font-size: 0.9rem;
+      color: var(--sub);
+      margin: 0 0 26px;
+    }
+
+    /* ── Unified input card ── */
+    .chatInputCard {
+      max-width: 820px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.32);
+      position: relative;
+      overflow: visible;
+      text-align: left;
+    }
+
+    /* Search rail inside card: strip its own background/shadow/border */
+    .chatInputCard .searchRail {
+      box-shadow: none !important;
+      background: transparent !important;
+      border-radius: 20px 20px 0 0 !important;
+      padding: 10px 14px !important;
+      border: none !important;
+      border-bottom: 1px solid var(--line) !important;
+      margin: 0 !important;
+    }
+
+    /* ── Action bar ── */
+    .chatActionBar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Upload toggle button */
+    .chatUploadToggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--sub);
+      padding: 7px 14px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: background .18s, color .18s, border-color .18s;
+    }
+    .chatUploadToggle:hover {
+      background: var(--panel-soft);
+      color: var(--ink);
+      border-color: #4a6890;
+    }
+    .chatUploadToggle.active {
+      color: var(--brand);
+      border-color: var(--brand);
+      background: rgba(42,108,255,.08);
+    }
+
+    /* ── Collapsible upload panel ── */
+    .chatUploadExpand {
+      display: none;
+      padding: 18px 20px 22px;
+      border-top: 1px solid var(--line);
+    }
+    .chatUploadExpand.open {
+      display: block;
+      animation: chatSlide .18s ease;
+    }
+    @keyframes chatSlide {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Upload panel: drop zone left, controls right */
+    .chatUploadGrid {
+      display: grid;
+      grid-template-columns: 1fr 240px;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 580px) {
+      .chatUploadGrid { grid-template-columns: 1fr; }
+    }
+
+    /* Override hero/container styles when nested inside chatHero */
+    .chatHero .hero {
+      background: transparent !important;
+      padding: 0 !important;
+    }
+    .chatHero .hero .container {
+      max-width: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* Responsive card */
+    @media (max-width: 600px) {
+      .chatHeroTitle { font-size: 1.5rem; }
+      .chatHero { padding: 32px 16px 24px; }
+    }
+
+    /* Hide entire hero when viewer is open */
+    body.viewer-open .chatHero {
+      display: none !important;
+    }
+
+    /* Card section header (Upload / Browse Library labels) */
+    .cardSectionHeader {
+      padding: 12px 16px 10px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--sub);
+      border-bottom: 1px solid var(--line);
+    }
+
+    /* Pipeline layout — horizontal */
+    .chatUploadSection {
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Browse Library vertical grid */
+    .libraryGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      padding: 0;
+    }
+    .pipelineRow {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .pipelineSteps {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+    }
+    .pipelineStep {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+    .pipelineStepHeader { display: flex; align-items: center; gap: 5px; }
+    .pipelineStepNum {
+      width: 17px; height: 17px; border-radius: 50%;
+      background: var(--brand); color: #fff;
+      font-size: 0.62rem; font-weight: 800;
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .pipelineStepTitle {
+      font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px; color: var(--sub);
+      white-space: nowrap;
+    }
+    .pipelineStepOpt {
+      font-size: 0.6rem; color: var(--sub); opacity: 0.55;
+      font-style: italic; white-space: nowrap;
+    }
+    .pipelineArrow {
+      color: var(--sub); opacity: 0.4;
+      font-size: 0.9rem; flex-shrink: 0;
+      margin-bottom: 9px; /* vertically center with selects */
+    }
+    .inferSelect {
+      width: 100%; background: var(--panel-soft); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 7px 8px; font-size: 0.82rem; cursor: pointer;
+    }
+    #inferRunBtn {
+      height: var(--control-h);
+      border-radius: 10px;
+      min-width: 132px;
+      padding: 0 20px;
+      font-size: 0.85rem;
+      font-weight: 900;
+      border: none;
+      background: var(--line);
+      color: var(--sub);
+      cursor: not-allowed;
+      transition: background .2s, color .2s;
+      flex-shrink: 0;
+      align-self: flex-end;
+    }
+    </style>
+
+    <div class="chatHero">
+      <h1 class="chatHeroTitle">PanTS CT Finder</h1>
+      <p class="chatHeroSub">Search the pancreatic CT library or upload your own scan for AI analysis</p>
+
+      <!-- ① Upload your own CT scan -->
+      <div class="chatInputCard" style="margin-bottom:20px">
+        <div class="cardSectionHeader">Upload your own CT scan</div>
+        <div class="chatUploadSection">
+
+          <!-- Drop zone: tall, centered -->
+          <div id="inferDropZone" style="border:2px dashed var(--sub);border-radius:10px;padding:36px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;transition:border-color .2s,background .2s;background:rgba(255,255,255,0.03)">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" id="inferIcon" style="color:var(--sub)"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            <span id="inferFileName" style="font-size:.88rem;color:var(--sub);text-align:center">Click or drag to upload<br><span style="font-size:.78rem;opacity:.65">.nii or .nii.gz</span></span>
+            <input id="inferFileInput" type="file" accept=".nii,.gz" style="display:none">
+          </div>
+
+          <!-- Horizontal pipeline + Run Analysis -->
+          <div class="pipelineRow">
+            <div class="pipelineSteps">
+
+              <div class="pipelineStep">
+                <div class="pipelineStepHeader">
+                  <span class="pipelineStepNum">1</span>
+                  <span class="pipelineStepTitle">Preprocessing</span>
+                  <span class="pipelineStepOpt">optional</span>
+                </div>
+                <select id="inferPreprocessSelect" class="inferSelect">
+                  <option value="">None (skip)</option>
+                  <option value="Atlas-Net">Atlas-Net</option>
+                </select>
+              </div>
+
+              <div class="pipelineArrow">→</div>
+
+              <div class="pipelineStep">
+                <div class="pipelineStepHeader">
+                  <span class="pipelineStepNum">2</span>
+                  <span class="pipelineStepTitle">Model</span>
+                </div>
+                <select id="inferModelSelect" class="inferSelect">
+                  <option value="" disabled selected>Select a model</option>
+                  <option value="ePAI">ePAI</option>
+                  <option value="SuPreM">SuPreM</option>
+                  <option value="MedFormer">MedFormer</option>
+                  <option value="R-Super">R-Super</option>
+                </select>
+              </div>
+
+              <div class="pipelineArrow">→</div>
+
+              <div class="pipelineStep">
+                <div class="pipelineStepHeader">
+                  <span class="pipelineStepNum">3</span>
+                  <span class="pipelineStepTitle">Postprocessing</span>
+                  <span class="pipelineStepOpt">optional</span>
+                </div>
+                <select id="inferPostprocessSelect" class="inferSelect">
+                  <option value="">None (skip)</option>
+                  <option value="OpenVAE">OpenVAE</option>
+                </select>
+              </div>
+
+            </div>
+            <button id="inferRunBtn" disabled>Run Analysis</button>
+          </div>
+
+          <!-- Progress + Error -->
+          <div id="inferProgress" style="display:none">
+            <div id="inferProgressLabel" style="font-size:.73rem;color:var(--sub);text-align:center;margin-bottom:4px"></div>
+            <div style="width:100%;height:5px;background:var(--line);border-radius:9999px;overflow:hidden">
+              <div id="inferProgressBar" style="height:100%;width:0;background:var(--brand);border-radius:9999px;transition:width .3s ease"></div>
+            </div>
+          </div>
+          <div id="inferError" style="display:none;font-size:.73rem;color:var(--bad);text-align:center"></div>
+
         </div>
       </div>
-      <div id="inferError" style="display:none;font-size:.75rem;color:var(--bad);text-align:center;margin-top:8px"></div>
-    </section>
 
-    <!-- Search -->
-    <div class="searchBarWrapper" style="margin-top:16px">
-      <section class="hero">
-        <div class="container">
-          <div class="searchRail">
-            <!-- ID -->
-            <div class="segment pop" id="popID">
-              <label>ID</label>
-              <div class="inputWrap">
-                <input id="q" class="input popBtn" placeholder="Search Case ID or keyword…" autocomplete="off">
-                <button id="clearBtn" class="clearBtn" title="Clear" aria-label="Clear">×</button>
-              </div>
+      <!-- ② Browse Library (search controls) -->
+      <div class="chatInputCard" style="margin-bottom:0">
+        <div class="cardSectionHeader">Browse Library</div>
+        <section class="hero" style="margin:0">
+          <div class="container">
+            <div class="searchRail">
 
-              <div class="popPanel" style="width:520px">
-                <div class="group">
-                  <div class="groupTitle">Recommended IDs</div>
-                  <div id="idReco" class="chips"></div>
+              <!-- Search input (no ID label) -->
+              <div class="segment pop" id="popID">
+                <div class="inputWrap">
+                  <input id="q" class="input popBtn" placeholder="Search Case ID or keyword…" autocomplete="off">
+                  <button id="clearBtn" class="clearBtn" title="Clear" aria-label="Clear">×</button>
                 </div>
-                <div class="group">
-                  <div class="groupTitle">Recently viewed</div>
-                  <div id="idRecent" class="chips">
-                    <span class="recMeta">No recent</span>
+                <div class="popPanel" style="width:520px">
+                  <div class="group">
+                    <div class="groupTitle">Recommended IDs</div>
+                    <div id="idReco" class="chips"></div>
+                  </div>
+                  <div class="group">
+                    <div class="groupTitle">Recently viewed</div>
+                    <div id="idRecent" class="chips">
+                      <span class="recMeta">No recent</span>
+                    </div>
                   </div>
                 </div>
               </div>
+
+              <!-- Tumor / Sex / Age -->
+              <div class="segment pop" id="popSTA">
+                <button class="fakeInput popBtn" type="button">
+                  <span id="staSummary">Any tumor · Any sex · Any age</span>
+                </button>
+                <div class="popPanel" style="max-width:560px">
+                  <div class="group">
+                    <div class="groupTitle">Tumor</div>
+                    <div id="tumorChips" class="chips">
+                      <button class="chip" data-tumor="">Any</button>
+                      <button class="chip flat" data-tumor="1">Tumor</button>
+                      <button class="chip flat" data-tumor="0">No tumor</button>
+                    </div>
+                  </div>
+                  <div class="group">
+                    <div class="groupTitle">Sex <span class="hint">Multi-Select</span></div>
+                    <div id="sexChips" class="chipArea flat">
+                      <button class="chip" data-sex="">Any</button>
+                      <button class="chip" data-sex="M">Male</button>
+                      <button class="chip" data-sex="F">Female</button>
+                      <button class="chip" data-sex="U">Unknown</button>
+                    </div>
+                  </div>
+                  <div class="group">
+                    <div class="groupTitle">Age <span class="hint">Multi-Select</span></div>
+                    <div id="ageChips" class="chipArea flat"></div>
+                  </div>
+                </div>
+              </div>
+
+              <button id="searchBtn" class="btnSearch" type="button">Search</button>
             </div>
+          </div>
+        </section>
+      </div>
 
-            <!-- STA -->
-            <div class="segment pop" id="popSTA">
-              <button class="fakeInput popBtn" type="button">
-                <span id="staSummary">Any tumor · Any sex · Any age</span>
-              </button>
+    </div><!-- /.chatHero -->
 
-              <div class="popPanel" style="max-width:560px">
-                <div class="group">
-                  <div class="groupTitle">Tumor</div>
-                  <div id="tumorChips" class="chips">
-                    <button class="chip" data-tumor="">Any</button>
-                    <button class="chip flat" data-tumor="1">Tumor</button>
-                    <button class="chip flat" data-tumor="0">No tumor</button>
-                  </div>
-                </div>
-
-                <div class="group">
-                  <div class="groupTitle">Sex <span class="hint">Multi-Select</span></div>
-                  <div id="sexChips" class="chipArea flat">
-                    <button class="chip" data-sex="">Any</button>
-                    <button class="chip" data-sex="M">Male</button>
-                    <button class="chip" data-sex="F">Female</button>
-                    <button class="chip" data-sex="U">Unknown</button>
-                  </div>
-                </div>
-
-                <div class="group">
-                  <div class="groupTitle">Age <span class="hint">Multi-Select</span></div>
-                  <div id="ageChips" class="chipArea flat"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Search button -->
-            <button id="searchBtn" class="btnSearch" type="button">Search</button>
-          </div> <!-- /.searchRail -->
-        </div>   <!-- /.container -->
-      </section>
-    </div> <!-- /.searchBarWrapper -->
-
-    <!-- Browse -->
-    <section class="panel container recBar" id="recBar">
-        <div class="recTitle">Browse</div>
-        <div class="recViewport">
-            <button class="recCtrl recPrev" id="recPrev" title="Previous">‹</button>
-            <button class="recCtrl recNext" id="recNext" title="Next">›</button>
-            <button class="recPlay" id="recPlay" title="Pause/Play">⏸</button>
-            <div id="recScroll" class="recScroll"></div>
-        </div>
+    <!-- Browse Library grid (vertical) -->
+    <section class="container recBar" id="recBar" style="padding-top:16px;padding-bottom:32px;max-width:820px;margin-left:auto;margin-right:auto">
+        <div id="recScroll" class="libraryGrid"></div>
     </section>
 
     <!-- Main -->
@@ -2308,25 +2562,17 @@ function updatePanels() {
   // Advanced 面板：多筆才顯示
   const filt = document.getElementById('filters');
   if (filt) {
-    const showFilter = showCards && count > 1;
+    const showFilter = showCards;
     filt.classList.toggle('show', showFilter);
     window._toggleEl(filt, showFilter);
   }
 
-  // 單筆視覺
   const mainEl  = document.querySelector('.main') || document.querySelector('.content') || document.querySelector('.twoCols');
   const panelEl = document.getElementById('resultsPanel');
   const cardsEl = document.getElementById('cards');
-
-  if (showCards && count === 1) {
-    mainEl?.classList.add('singleResult');
-    panelEl?.classList.add('spanAll');
-    cardsEl?.classList.add('centerOne');
-  } else {
-    mainEl?.classList.remove('singleResult');
-    panelEl?.classList.remove('spanAll');
-    cardsEl?.classList.remove('centerOne');
-  }
+  mainEl?.classList.remove('singleResult');
+  panelEl?.classList.remove('spanAll');
+  cardsEl?.classList.remove('centerOne');
 
   // 排序下拉（單筆時關閉；0 筆也關）
   const sortSel = document.getElementById('sortBy');
@@ -2529,85 +2775,21 @@ async function initBrowse() {
     const ranked = (filtered.length ? filtered : fallback()).sort(byCuratedQuality);
 
     // 最後再保險一次：把 BAD_IDS 剔除
-    const best = ranked.filter(it => !BAD_IDS.includes(idOf(it))).slice(0, 20);
+    const best = ranked.filter(it => !BAD_IDS.includes(idOf(it))).slice(0, 120);
 
     if (!best.length) {
       const empty = document.createElement('article');
       empty.className = 'card inRec';
       empty.innerHTML = `
         <div class="body" style="padding:12px 14px">
-          <div class="titleRow"><span class="recId" style="font-weight:900">No items</span></div>
+          <div class="titleRow"><span style="font-weight:900">No items</span></div>
           <div class="keyRow" style="margin-top:6px;color:#93a4b8">Try adjusting filters, then Search</div>
         </div>`;
       bar.appendChild(empty);
-      $('#recPrev')?.setAttribute('disabled', 'disabled');
-      $('#recNext')?.setAttribute('disabled', 'disabled');
-      $('#recPlay')?.setAttribute('disabled', 'disabled');
       return;
-    } else {
-      $('#recPrev')?.removeAttribute('disabled');
-      $('#recNext')?.removeAttribute('disabled');
-      $('#recPlay')?.removeAttribute('disabled');
     }
 
-    const frag = document.createDocumentFragment();
-    best.forEach(it => { const card = makeCard(it); card.classList.add('inRec'); frag.appendChild(card); });
-    bar.appendChild(frag);
-
-    const vp = document.querySelector('.recViewport');
-    const firstCard = bar.querySelector('.card') || bar.querySelector('.recCard');
-    if (vp && firstCard) {
-      const h = Math.ceil(firstCard.getBoundingClientRect().height);
-      vp.style.minHeight = h + 'px';
-    }
-
-    const scroller = bar;
-    const gap = 12;
-    let step = firstCard ? (firstCard.getBoundingClientRect().width + gap) : 340;
-
-    const atEnd = () => (scroller.scrollLeft + scroller.clientWidth) >= (scroller.scrollWidth - 2);
-    const tick = () => { if (atEnd()) scroller.scrollTo({ left: 0, behavior: 'smooth' }); else scroller.scrollBy({ left: step, behavior: 'smooth' }); };
-
-    $('#recPrev').onclick = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); scroller.scrollBy({ left: -step, behavior: 'smooth' }); };
-    $('#recNext').onclick = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); scroller.scrollBy({ left: +step, behavior: 'smooth' }); };
-    $('#recPlay').onclick = (e) => {
-      e?.preventDefault?.(); e?.stopPropagation?.();
-      recPlaying = !recPlaying;
-      $('#recPlay').textContent = recPlaying ? '⏸' : '▶';
-      if (recPlaying) startAuto(); else stopAuto();
-    };
-
-    function startAuto() { stopAuto(); recTimer = setInterval(tick, 3500); }
-    function stopAuto()  { if (recTimer) { clearInterval(recTimer); recTimer = null; } }
-
-    $('#recPlay').textContent = recPlaying ? '⏸' : '▶';
-    if (recPlaying) startAuto();
-
-    if (window._recResizeHandler) window.removeEventListener('resize', window._recResizeHandler);
-    window._recResizeHandler = () => {
-      const first = bar.querySelector('.card') || bar.querySelector('.recCard');
-      step = first ? (first.getBoundingClientRect().width + gap) : 340;
-    };
-    window.addEventListener('resize', window._recResizeHandler, { passive: true });
-
-    ['recPrev','recNext','recPlay'].forEach((id) => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
-      btn.tabIndex = 0;
-      if (!btn.getAttribute('aria-label')) {
-        btn.setAttribute('aria-label', id === 'recPrev' ? 'Previous' : id === 'recNext' ? 'Next' : 'Pause/Play');
-      }
-      btn.addEventListener('mousedown', (e) => e.preventDefault());
-      btn.addEventListener('keydown', (e) => {
-        const k = e.key;
-        const shouldClick =
-          k === 'Enter' || k === ' ' ||
-          (id === 'recPrev' && k === 'ArrowLeft') ||
-          (id === 'recNext' && k === 'ArrowRight') ||
-          (id === 'recPlay' && (k === 'k' || k === 'K'));
-        if (shouldClick) { e.preventDefault(); e.stopPropagation(); btn.click(); }
-      });
-    });
+    _startInfiniteRender(bar, best);
   } catch (e) {
     console.warn('initBrowse failed:', e);
   }
@@ -3924,25 +4106,29 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
 <script>
 (function () {
   const CHUNK_SIZE = 256 * 1024;
-  let selectedFile = null;
-  let selectedModel = '';
+  let selectedFile      = null;
+  let selectedPreprocess  = '';
+  let selectedModel       = '';
+  let selectedPostprocess = '';
   let pollTimer = null;
 
-  const dropZone   = document.getElementById('inferDropZone');
-  const fileInput  = document.getElementById('inferFileInput');
-  const fileName   = document.getElementById('inferFileName');
-  const icon       = document.getElementById('inferIcon');
-  const modelSel   = document.getElementById('inferModelSelect');
-  const runBtn     = document.getElementById('inferRunBtn');
-  const progressWrap = document.getElementById('inferProgress');
-  const progressBar  = document.getElementById('inferProgressBar');
-  const progressLbl  = document.getElementById('inferProgressLabel');
-  const errorDiv   = document.getElementById('inferError');
+  const dropZone       = document.getElementById('inferDropZone');
+  const fileInput      = document.getElementById('inferFileInput');
+  const fileName       = document.getElementById('inferFileName');
+  const icon           = document.getElementById('inferIcon');
+  const preprocessSel  = document.getElementById('inferPreprocessSelect');
+  const modelSel       = document.getElementById('inferModelSelect');
+  const postprocessSel = document.getElementById('inferPostprocessSelect');
+  const runBtn         = document.getElementById('inferRunBtn');
+  const progressWrap   = document.getElementById('inferProgress');
+  const progressBar    = document.getElementById('inferProgressBar');
+  const progressLbl    = document.getElementById('inferProgressLabel');
+  const errorDiv       = document.getElementById('inferError');
 
   function setFile(file) {
     if (!file || (!file.name.endsWith('.nii') && !file.name.endsWith('.nii.gz'))) return;
     selectedFile = file;
-    fileName.textContent = file.name;
+    fileName.innerHTML = file.name + '<br><span style="font-size:.75rem;opacity:.7">.nii or .nii.gz</span>';
     icon.style.color = 'var(--brand)';
     dropZone.style.borderColor = 'var(--brand)';
     dropZone.style.background = 'rgba(42,108,255,0.08)';
@@ -3953,107 +4139,132 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
     const can = !!selectedFile && !!selectedModel;
     runBtn.disabled = !can;
     runBtn.style.background = can ? 'var(--brand)' : 'var(--line)';
-    runBtn.style.color = can ? '#fff' : 'var(--sub)';
-    runBtn.style.cursor = can ? 'pointer' : 'not-allowed';
+    runBtn.style.color      = can ? '#fff' : 'var(--sub)';
+    runBtn.style.cursor     = can ? 'pointer' : 'not-allowed';
   }
 
   function setProgress(pct, label) {
     progressWrap.style.display = 'block';
-    progressBar.style.width = pct + '%';
-    progressLbl.textContent = label;
-    errorDiv.style.display = 'none';
+    progressBar.style.width    = pct + '%';
+    progressLbl.textContent    = label;
+    errorDiv.style.display     = 'none';
   }
 
   function showError(msg) {
-    errorDiv.textContent = msg;
-    errorDiv.style.display = 'block';
+    errorDiv.textContent       = msg;
+    errorDiv.style.display     = 'block';
     progressWrap.style.display = 'none';
   }
 
   function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
-  function startPolling(sid, model) {
-    stopPoll();
-    setProgress(5, 'Running ' + model + '… 5%');
-    pollTimer = setInterval(async () => {
-      try {
-        const res = await fetch(apiUrl + '/api/inference-status/' + sid);
-        const data = await res.json();
-        const status = (data.status || '').toLowerCase();
-        if (status === 'completed') {
-          setProgress(100, 'Done! Opening viewer…');
-          stopPoll();
-          setTimeout(() => {
-            if (model === 'OpenVAE') {
-              window.location.href = '/reconstruction/' + sid;
-            } else {
-              window.location.href = '/session/' + sid;
-            }
-          }, 600);
-        } else if (status === 'failed') {
-          showError('Inference failed: ' + (data.error || 'unknown error'));
-          stopPoll();
-          runBtn.disabled = false;
-          updateRunBtn();
-        } else {
-          const cur = parseInt(progressBar.style.width) || 5;
-          const next = Math.min(95, cur + 7);
-          setProgress(next, 'Running ' + model + '… ' + next + '%');
+  // Polls until a session completes; resolves with sid, rejects on failure.
+  function pollUntilDone(sid, label, pctStart, pctEnd) {
+    return new Promise((resolve, reject) => {
+      stopPoll();
+      let pct = pctStart;
+      setProgress(pct, label + '… ' + pct + '%');
+      pollTimer = setInterval(async () => {
+        try {
+          const res    = await fetch(apiUrl + '/api/inference-status/' + sid);
+          const data   = await res.json();
+          const status = (data.status || '').toLowerCase();
+          if (status === 'completed') {
+            stopPoll();
+            setProgress(pctEnd, label + ' complete');
+            resolve(sid);
+          } else if (status === 'failed') {
+            stopPoll();
+            reject(new Error('Inference failed: ' + (data.error || 'unknown error')));
+          } else {
+            pct = Math.min(pctEnd - 3, pct + 4);
+            setProgress(pct, label + '… ' + pct + '%');
+          }
+        } catch {
+          pct = Math.min(pctEnd - 3, pct + 2);
+          setProgress(pct, label + '…');
         }
-      } catch {
-        const cur = parseInt(progressBar.style.width) || 5;
-        setProgress(Math.min(95, cur + 3), 'Running ' + model + '…');
-      }
-    }, 2500);
+      }, 2500);
+    });
   }
 
-  dropZone.addEventListener('click', () => fileInput.click());
+  async function startInference(sid, modelName, uploadedFilename) {
+    const fd = new FormData();
+    fd.append('session_id',        sid);
+    fd.append('model_name',        modelName);
+    fd.append('uploaded_filename', uploadedFilename);
+    const res  = await fetch(apiUrl + '/api/run-epai-inference', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to start inference');
+    return data;
+  }
+
+  dropZone.addEventListener('click',    () => fileInput.click());
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--brand)'; });
-  dropZone.addEventListener('dragleave', () => { if (!selectedFile) dropZone.style.borderColor = 'var(--sub)'; });
-  dropZone.addEventListener('drop', e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); });
-  fileInput.addEventListener('change', e => setFile(e.target.files[0]));
-  modelSel.addEventListener('change', e => { selectedModel = e.target.value; updateRunBtn(); });
+  dropZone.addEventListener('dragleave',() => { if (!selectedFile) dropZone.style.borderColor = 'var(--sub)'; });
+  dropZone.addEventListener('drop',     e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change',  e => setFile(e.target.files[0]));
+  preprocessSel?.addEventListener('change',  e => { selectedPreprocess  = e.target.value; });
+  modelSel.addEventListener('change',        e => { selectedModel        = e.target.value; updateRunBtn(); });
+  postprocessSel?.addEventListener('change', e => { selectedPostprocess  = e.target.value; });
 
   runBtn.addEventListener('click', async () => {
     if (!selectedFile || !selectedModel) return;
-    runBtn.disabled = true;
+    runBtn.disabled        = true;
     runBtn.style.background = 'var(--line)';
-    runBtn.style.color = 'var(--sub)';
-    errorDiv.style.display = 'none';
+    runBtn.style.color      = 'var(--sub)';
+    errorDiv.style.display  = 'none';
 
-    const sid = crypto.randomUUID();
+    const sid         = crypto.randomUUID();
     const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
 
     try {
+      // Upload (0–30%)
       setProgress(0, 'Uploading ' + selectedFile.name + '…');
       for (let i = 0; i < totalChunks; i++) {
         const chunk = selectedFile.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, selectedFile.size));
         const fd = new FormData();
-        fd.append('session_id', sid);
-        fd.append('chunk_index', i.toString());
+        fd.append('session_id',   sid);
+        fd.append('chunk_index',  i.toString());
         fd.append('total_chunks', totalChunks.toString());
-        fd.append('file', chunk);
-        const res = await fetch(apiUrl + '/api/upload-inference-chunk', { method: 'POST', body: fd });
+        fd.append('file',         chunk);
+        const res  = await fetch(apiUrl + '/api/upload-inference-chunk', { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Chunk upload failed');
-        const pct = Math.round(((i + 1) / totalChunks) * 100);
-        setProgress(pct, 'Uploading… ' + pct + '%');
+        setProgress(Math.round(((i + 1) / totalChunks) * 30), 'Uploading… ' + Math.round(((i + 1) / totalChunks) * 100) + '%');
       }
 
-      const finalFd = new URLSearchParams({ session_id: sid, total_chunks: totalChunks.toString(), output_filename: selectedFile.name });
+      const finalFd  = new URLSearchParams({ session_id: sid, total_chunks: totalChunks.toString(), output_filename: selectedFile.name });
       const finalRes = await fetch(apiUrl + '/api/finalize-upload', { method: 'POST', body: finalFd });
       const finalData = await finalRes.json();
       if (!finalRes.ok) throw new Error(finalData.error || 'Finalize failed');
 
-      const inferFd = new FormData();
-      inferFd.append('session_id', sid);
-      inferFd.append('model_name', selectedModel);
-      inferFd.append('uploaded_filename', finalData.uploaded_filename || selectedFile.name);
-      const inferRes = await fetch(apiUrl + '/api/run-epai-inference', { method: 'POST', body: inferFd });
-      const inferData = await inferRes.json();
-      if (!inferRes.ok) throw new Error(inferData.error || 'Failed to start inference');
+      const uploadedFilename = finalData.uploaded_filename || selectedFile.name;
 
-      startPolling(sid, selectedModel);
+      // Build ordered step list; allocate progress 30–95% evenly across steps
+      const steps = [];
+      if (selectedPreprocess)  steps.push({ model: selectedPreprocess,  label: 'Preprocessing ('  + selectedPreprocess  + ')' });
+      steps.push(               { model: selectedModel,                  label: selectedModel });
+      if (selectedPostprocess) steps.push({ model: selectedPostprocess, label: 'Postprocessing (' + selectedPostprocess + ')' });
+
+      const sliceSize = Math.floor(65 / steps.length);
+      let pctBase = 30;
+
+      // Run each step sequentially, piping the same session through
+      for (const step of steps) {
+        await startInference(sid, step.model, uploadedFilename);
+        await pollUntilDone(sid, step.label, pctBase, pctBase + sliceSize);
+        pctBase += sliceSize;
+      }
+
+      setProgress(100, 'Done! Opening viewer…');
+      const lastModel = steps[steps.length - 1].model;
+      setTimeout(() => {
+        window.location.href = lastModel === 'OpenVAE'
+          ? '/reconstruction/' + sid
+          : '/session/' + sid;
+      }, 600);
+
     } catch (err) {
       showError('Error: ' + err.message);
       updateRunBtn();
