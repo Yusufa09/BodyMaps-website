@@ -518,7 +518,12 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
     session_path = os.path.join(SESSIONS_DIR, session_id)
     os.makedirs(session_path, exist_ok=True)
 
-    if ct_file is not None:
+    if model_name == 'ShapeKit':
+        # ShapeKit takes a segmentation directory from a previous step, not a CT file
+        if not server_input_path or not os.path.isdir(server_input_path):
+            return jsonify({"error": "ShapeKit requires INPUT_SERVER_PATH pointing to a segmentation output directory"}), 400
+        input_path = server_input_path
+    elif ct_file is not None:
         input_path = os.path.join(session_path, ct_file.filename)
         ct_file.save(input_path)
     elif server_input_path:

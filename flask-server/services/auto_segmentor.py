@@ -84,6 +84,8 @@ def run_auto_segmentation(input_path, session_dir, model):
                 conda_path=conda_path,
                 atlasnet_env_name=os.getenv("CONDA_ENV_ATLASNET", "epai"),
             )
+        elif model == 'ShapeKit':
+            return _run_shapekit_inference(input_dir=input_path, session_dir=session_dir)
         else:
             raise ValueError(f"Unknown model: {model}")
 
@@ -857,3 +859,44 @@ def _run_epai_remote_inference(
             ["ssh", "-p", remote_port, remote_target, f"rm -rf {shlex.quote(remote_job_dir)}"],
             "Failed to clean up remote ePAI workspace",
         )
+
+
+def _run_shapekit_inference(input_dir: str, session_dir: str) -> str:
+    """
+    Run ShapeKit post-processing on a segmentation output directory.
+
+    input_dir: output_mask_dir from the preceding segmentation step
+    Output: <session_dir>/shapekit/ containing refined masks
+    """
+    output_dir = os.path.join(session_dir, "shapekit")
+    log_dir = os.path.join(session_dir, "shapekit_logs")
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+
+    shapekit_src = os.getenv("SHAPEKIT_SRC_PATH", "/home/visitor/ShapeKit")
+    conda_env = os.getenv("CONDA_ENV_SHAPEKIT", "shapekit")
+    conda_exe = shutil.which("conda") or "/home/apps/anaconda3/condabin/conda"
+    cpu_count = os.getenv("SHAPEKIT_CPU_NUM", "16")
+
+    full_cmd = (
+        f"{shlex.quote(conda_exe)} run -n {shlex.quote(conda_env)} "
+        f"python -W ignore {shlex.quote(os.path.join(shapekit_src, 'main.py'))} "
+        f"--input_folder {shlex.quote(os.path.abspath(input_dir))} "
+        f"--output_folder {shlex.quote(os.path.abspath(output_dir))} "
+        f"--cpu_count {cpu_count} "
+        f"--log_folder {shlex.quote(os.path.abspath(log_dir))} "
+        f"--continue_prediction"
+    )
+
+    print(f"[INFO] Running ShapeKit post-processing\n{full_cmd}")
+    try:
+        subprocess.run(full_cmd, shell=True, executable="/bin/bash", check=True, cwd=shapekit_src)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"ShapeKit post-processing failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
+        ) from e
+
+    if not os.path.isdir(output_dir) or not os.listdir(output_dir):
+        raise RuntimeError(f"ShapeKit produced no output in: {output_dir}")
+
+    return output_dir

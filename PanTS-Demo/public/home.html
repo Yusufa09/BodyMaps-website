@@ -2155,7 +2155,7 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
                 </div>
                 <select id="inferPreprocessSelect" class="inferSelect">
                   <option value="">None (skip)</option>
-                  <option value="Atlas-Net">Atlas-Net</option>
+                  <option value="OpenVAE">OpenVAE</option>
                 </select>
               </div>
 
@@ -2172,6 +2172,7 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
                   <option value="SuPreM">SuPreM</option>
                   <option value="MedFormer">MedFormer</option>
                   <option value="R-Super">R-Super</option>
+                  <option value="Atlas-Net">Atlas-Net</option>
                 </select>
               </div>
 
@@ -2185,7 +2186,7 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
                 </div>
                 <select id="inferPostprocessSelect" class="inferSelect">
                   <option value="">None (skip)</option>
-                  <option value="OpenVAE">OpenVAE</option>
+                  <option value="ShapeKit">ShapeKit</option>
                 </select>
               </div>
 
@@ -2218,18 +2219,7 @@ section#recBar {           /* ⭐ 把 Browse 也拉進來一起對齊 */
                   <input id="q" class="input popBtn" placeholder="Search Case ID or keyword…" autocomplete="off">
                   <button id="clearBtn" class="clearBtn" title="Clear" aria-label="Clear">×</button>
                 </div>
-                <div class="popPanel" style="width:520px">
-                  <div class="group">
-                    <div class="groupTitle">Recommended IDs</div>
-                    <div id="idReco" class="chips"></div>
-                  </div>
-                  <div class="group">
-                    <div class="groupTitle">Recently viewed</div>
-                    <div id="idRecent" class="chips">
-                      <span class="recMeta">No recent</span>
-                    </div>
-                  </div>
-                </div>
+                <div class="popPanel" style="display:none"></div>
               </div>
 
               <!-- Tumor / Sex / Age -->
@@ -4105,10 +4095,10 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
 
 <script>
 (function () {
-  const CHUNK_SIZE = 256 * 1024;
-  let selectedFile      = null;
-  let selectedPreprocess  = '';
-  let selectedModel       = '';
+  const CHUNK_SIZE = 256 * 1024; // 256 KB — server enforces small chunk limit
+  let selectedFile       = null;
+  let selectedPreprocess = '';
+  let selectedModel      = '';
   let selectedPostprocess = '';
   let pollTimer = null;
 
@@ -4116,9 +4106,9 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
   const fileInput      = document.getElementById('inferFileInput');
   const fileName       = document.getElementById('inferFileName');
   const icon           = document.getElementById('inferIcon');
-  const preprocessSel  = document.getElementById('inferPreprocessSelect');
-  const modelSel       = document.getElementById('inferModelSelect');
-  const postprocessSel = document.getElementById('inferPostprocessSelect');
+  const preprocessSel   = document.getElementById('inferPreprocessSelect');
+  const modelSel        = document.getElementById('inferModelSelect');
+  const postprocessSel  = document.getElementById('inferPostprocessSelect');
   const runBtn         = document.getElementById('inferRunBtn');
   const progressWrap   = document.getElementById('inferProgress');
   const progressBar    = document.getElementById('inferProgressBar');
@@ -4164,7 +4154,10 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
       stopPoll();
       let pct = pctStart;
       setProgress(pct, label + '… ' + pct + '%');
+      let ticks = 0;
       pollTimer = setInterval(async () => {
+        ticks++;
+        const dots = '.'.repeat((ticks % 3) + 1);
         try {
           const res    = await fetch(apiUrl + '/api/inference-status/' + sid);
           const data   = await res.json();
@@ -4172,27 +4165,32 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
           if (status === 'completed') {
             stopPoll();
             setProgress(pctEnd, label + ' complete');
-            resolve(sid);
+            resolve(data);
           } else if (status === 'failed') {
             stopPoll();
             reject(new Error('Inference failed: ' + (data.error || 'unknown error')));
           } else {
             pct = Math.min(pctEnd - 3, pct + 4);
-            setProgress(pct, label + '… ' + pct + '%');
+            const suffix = pct >= pctEnd - 3 ? ' (running' + dots + ')' : '… ' + pct + '%';
+            setProgress(pct, label + suffix);
           }
         } catch {
           pct = Math.min(pctEnd - 3, pct + 2);
-          setProgress(pct, label + '…');
+          setProgress(pct, label + ' (running' + dots + ')');
         }
       }, 2500);
     });
   }
 
-  async function startInference(sid, modelName, uploadedFilename) {
+  async function startInference(sid, modelName, uploadedFilename, inputServerPath) {
     const fd = new FormData();
-    fd.append('session_id',        sid);
-    fd.append('model_name',        modelName);
-    fd.append('uploaded_filename', uploadedFilename);
+    fd.append('session_id',  sid);
+    fd.append('model_name',  modelName);
+    if (inputServerPath) {
+      fd.append('INPUT_SERVER_PATH', inputServerPath);
+    } else {
+      fd.append('uploaded_filename', uploadedFilename);
+    }
     const res  = await fetch(apiUrl + '/api/run-epai-inference', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to start inference');
@@ -4205,8 +4203,8 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
   dropZone.addEventListener('drop',     e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); });
   fileInput.addEventListener('change',  e => setFile(e.target.files[0]));
   preprocessSel?.addEventListener('change',  e => { selectedPreprocess  = e.target.value; });
-  modelSel.addEventListener('change',        e => { selectedModel        = e.target.value; updateRunBtn(); });
-  postprocessSel?.addEventListener('change', e => { selectedPostprocess  = e.target.value; });
+  modelSel.addEventListener('change',        e => { selectedModel       = e.target.value; updateRunBtn(); });
+  postprocessSel?.addEventListener('change', e => { selectedPostprocess = e.target.value; });
 
   runBtn.addEventListener('click', async () => {
     if (!selectedFile || !selectedModel) return;
@@ -4228,9 +4226,12 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
         fd.append('chunk_index',  i.toString());
         fd.append('total_chunks', totalChunks.toString());
         fd.append('file',         chunk);
-        const res  = await fetch(apiUrl + '/api/upload-inference-chunk', { method: 'POST', body: fd });
+        const res  = await fetch(apiUrl + '/api/upload-inference-chunk', {
+          method: 'POST', body: fd,
+          signal: AbortSignal.timeout(120000),
+        });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Chunk upload failed');
+        if (!res.ok) throw new Error(data.error || 'Chunk upload failed (chunk ' + (i+1) + '/' + totalChunks + ')');
         setProgress(Math.round(((i + 1) / totalChunks) * 30), 'Uploading… ' + Math.round(((i + 1) / totalChunks) * 100) + '%');
       }
 
@@ -4249,21 +4250,24 @@ document.getElementById('homeBtn')?.addEventListener('click', () => {
 
       const sliceSize = Math.floor(65 / steps.length);
       let pctBase = 30;
+      let nextInputPath = null; // piped as INPUT_SERVER_PATH into the next step
 
-      // Run each step sequentially, piping the same session through
       for (const step of steps) {
-        await startInference(sid, step.model, uploadedFilename);
-        await pollUntilDone(sid, step.label, pctBase, pctBase + sliceSize);
+        await startInference(sid, step.model, uploadedFilename, nextInputPath);
+        const jobData = await pollUntilDone(sid, step.label, pctBase, pctBase + sliceSize);
+        const outDir = jobData.output_mask_dir || null;
+        // OpenVAE: pipe reconstructed_ct.nii.gz (file) to next step
+        // Other models: pipe the output directory itself (e.g. ShapeKit needs the mask folder)
+        nextInputPath = outDir
+          ? (step.model === 'OpenVAE'
+              ? outDir.replace(/\/?$/, '/') + 'reconstructed_ct.nii.gz'
+              : outDir)
+          : null;
         pctBase += sliceSize;
       }
 
       setProgress(100, 'Done! Opening viewer…');
-      const lastModel = steps[steps.length - 1].model;
-      setTimeout(() => {
-        window.location.href = lastModel === 'OpenVAE'
-          ? '/reconstruction/' + sid
-          : '/session/' + sid;
-      }, 600);
+      setTimeout(() => { window.location.href = '/session/' + sid; }, 600);
 
     } catch (err) {
       showError('Error: ' + err.message);
