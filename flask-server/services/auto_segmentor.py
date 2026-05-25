@@ -101,28 +101,34 @@ _VIEWER_LABELS = {
     "pancreatic_duct": 21, "pancreatic_lesion": 22, "postcava": 23,
     "prostate": 24, "spleen": 25, "stomach": 26,
     "superior_mesenteric_artery": 27, "veins": 28,
+    # extended labels for full ePAI output
+    "intestine": 29, "renal_vein_left": 30, "renal_vein_right": 31, "cbd_stent": 32,
 }
 
-# ePAI model label → viewer label
+# ePAI model label → viewer label (all 25 classes from dataset.json)
 _EPAI_TO_VIEWER = {
-    1: _VIEWER_LABELS["aorta"],
-    2: _VIEWER_LABELS["adrenal_gland_left"],
-    3: _VIEWER_LABELS["adrenal_gland_right"],
-    4: _VIEWER_LABELS["common_bile_duct"],
-    5: _VIEWER_LABELS["celiac_artery"],
-    6: _VIEWER_LABELS["colon"],
-    7: _VIEWER_LABELS["duodenum"],
-    8: _VIEWER_LABELS["gall_bladder"],
-    9: _VIEWER_LABELS["postcava"],
+    1:  _VIEWER_LABELS["aorta"],
+    2:  _VIEWER_LABELS["adrenal_gland_left"],
+    3:  _VIEWER_LABELS["adrenal_gland_right"],
+    4:  _VIEWER_LABELS["common_bile_duct"],
+    5:  _VIEWER_LABELS["celiac_artery"],
+    6:  _VIEWER_LABELS["colon"],
+    7:  _VIEWER_LABELS["duodenum"],
+    8:  _VIEWER_LABELS["gall_bladder"],
+    9:  _VIEWER_LABELS["postcava"],
     10: _VIEWER_LABELS["kidney_left"],
     11: _VIEWER_LABELS["kidney_right"],
     12: _VIEWER_LABELS["liver"],
     13: _VIEWER_LABELS["pancreas"],
     14: _VIEWER_LABELS["pancreatic_duct"],
     15: _VIEWER_LABELS["superior_mesenteric_artery"],
+    16: _VIEWER_LABELS["intestine"],
     17: _VIEWER_LABELS["spleen"],
     18: _VIEWER_LABELS["stomach"],
     19: _VIEWER_LABELS["veins"],
+    20: _VIEWER_LABELS["renal_vein_left"],
+    21: _VIEWER_LABELS["renal_vein_right"],
+    22: _VIEWER_LABELS["cbd_stent"],
     23: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pdac
     24: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_cyst
     25: _VIEWER_LABELS["pancreatic_lesion"],  # pancreatic_pnet
@@ -303,7 +309,6 @@ def _run_epai_inference(input_path: str, session_dir: str, conda_path: str, epai
                 f"--input_csv {shlex.quote(input_csv_path)} "
                 f"--output_csv {shlex.quote(output_csv_path)} "
                 f"--continue_prediction "
-                f"--save_probabilities "
                 f"-npp {shlex.quote(os.getenv('EPAI_NPP', '3'))} "
                 f"-nps {shlex.quote(os.getenv('EPAI_NPS', '3'))} "
                 f"-num_parts 1 "
@@ -348,7 +353,6 @@ def _run_epai_inference(input_path: str, session_dir: str, conda_path: str, epai
                     f"--input_csv {shlex.quote(input_csv_path)} "
                     f"--output_csv {shlex.quote(output_csv_path)} "
                     f"--continue_prediction "
-                    f"--save_probabilities "
                     f"-npp {shlex.quote(os.getenv('EPAI_NPP', '3'))} "
                     f"-nps {shlex.quote(os.getenv('EPAI_NPS', '3'))} "
                     f"-num_parts 1 "
@@ -819,7 +823,6 @@ def _run_epai_remote_inference(
         f"--input_csv {shlex.quote(remote_input_csv)} "
         f"--output_csv {shlex.quote(remote_output_csv)} "
         f"--continue_prediction "
-        f"--save_probabilities "
         f"-npp {shlex.quote(os.getenv('EPAI_NPP', '3'))} "
         f"-nps {shlex.quote(os.getenv('EPAI_NPS', '3'))} "
         f"-num_parts 1 "
@@ -865,29 +868,89 @@ def _run_shapekit_inference(input_dir: str, session_dir: str) -> str:
     """
     Run ShapeKit post-processing on a segmentation output directory.
 
-    input_dir: output_mask_dir from the preceding segmentation step
-    Output: <session_dir>/shapekit/ containing refined masks
+    ShapeKit expects: input_folder/case_id/segmentations/<organ>.nii.gz
+    We receive:       input_dir/combined_labels.nii.gz  (viewer label values)
+
+    Steps:
+      1. Split combined_labels.nii.gz into per-organ files in ShapeKit's layout
+      2. Run ShapeKit
+      3. Reassemble refined organs back into combined_labels.nii.gz with viewer label values
     """
+    import numpy as np
+    import nibabel as nib
+
     output_dir = os.path.join(session_dir, "shapekit")
-    log_dir = os.path.join(session_dir, "shapekit_logs")
+    log_dir    = os.path.join(session_dir, "shapekit_logs")
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
 
     shapekit_src = os.getenv("SHAPEKIT_SRC_PATH", "/home/visitor/ShapeKit")
-    conda_env = os.getenv("CONDA_ENV_SHAPEKIT", "shapekit")
-    conda_exe = shutil.which("conda") or "/home/apps/anaconda3/condabin/conda"
-    cpu_count = os.getenv("SHAPEKIT_CPU_NUM", "16")
+    conda_env    = os.getenv("CONDA_ENV_SHAPEKIT", "shapekit")
+    conda_exe    = shutil.which("conda") or "/home/apps/anaconda3/condabin/conda"
+    cpu_count    = os.getenv("SHAPEKIT_CPU_NUM", "16")
+
+    if not os.path.isdir(shapekit_src):
+        raise RuntimeError(
+            f"ShapeKit source not found at {shapekit_src}. "
+            "Install it with:\n"
+            f"  git clone https://github.com/BodyMaps/ShapeKit.git {shapekit_src}\n"
+            f"  conda create -n {conda_env} python=3.10 -y\n"
+            f"  conda run -n {conda_env} pip install -r {shapekit_src}/requirements.txt\n"
+            "Or set SHAPEKIT_SRC_PATH and CONDA_ENV_SHAPEKIT env vars to the correct paths."
+        )
+
+    # --- Step 1: split combined_labels.nii.gz into per-organ files ---
+    combined_path = os.path.join(input_dir, "combined_labels.nii.gz")
+    if not os.path.isfile(combined_path):
+        raise RuntimeError(
+            f"ShapeKit requires combined_labels.nii.gz but it was not found in: {input_dir}"
+        )
+
+    # Organs that ShapeKit's config.yaml knows how to process
+    _SHAPEKIT_ORGANS = {
+        "adrenal_gland_left", "adrenal_gland_right", "aorta", "bladder",
+        "colon", "duodenum", "femur_left", "femur_right", "gall_bladder",
+        "intestine", "kidney_left", "kidney_right", "liver",
+        "lung_left", "lung_right", "pancreas", "postcava", "prostate",
+        "spleen", "stomach",
+    }
+    # viewer label value → organ name
+    _label_to_name = {v: k for k, v in _VIEWER_LABELS.items()}
+
+    case_id      = "case001"
+    sk_input_dir = os.path.join(session_dir, "shapekit_input")
+    seg_dir      = os.path.join(sk_input_dir, case_id, "segmentations")
+    os.makedirs(seg_dir, exist_ok=True)
+
+    combined_img  = nib.load(combined_path)
+    combined_data = np.asarray(combined_img.dataobj, dtype=np.int16)
+    affine, header = combined_img.affine, combined_img.header
+
+    for label_val, organ_name in _label_to_name.items():
+        if organ_name not in _SHAPEKIT_ORGANS:
+            continue
+        mask = (combined_data == label_val).astype(np.int16)
+        if not np.any(mask):
+            continue
+        nib.save(
+            nib.Nifti1Image(mask, affine, header),
+            os.path.join(seg_dir, f"{organ_name}.nii.gz"),
+        )
+    print(f"[INFO] Split {len(os.listdir(seg_dir))} organ files into {seg_dir}")
+
+    # --- Step 2: run ShapeKit ---
+    sk_raw_output = os.path.join(session_dir, "shapekit_raw")
+    os.makedirs(sk_raw_output, exist_ok=True)
 
     full_cmd = (
         f"{shlex.quote(conda_exe)} run -n {shlex.quote(conda_env)} "
         f"python -W ignore {shlex.quote(os.path.join(shapekit_src, 'main.py'))} "
-        f"--input_folder {shlex.quote(os.path.abspath(input_dir))} "
-        f"--output_folder {shlex.quote(os.path.abspath(output_dir))} "
+        f"--input_folder {shlex.quote(os.path.abspath(sk_input_dir))} "
+        f"--output_folder {shlex.quote(os.path.abspath(sk_raw_output))} "
         f"--cpu_count {cpu_count} "
         f"--log_folder {shlex.quote(os.path.abspath(log_dir))} "
         f"--continue_prediction"
     )
-
     print(f"[INFO] Running ShapeKit post-processing\n{full_cmd}")
     try:
         subprocess.run(full_cmd, shell=True, executable="/bin/bash", check=True, cwd=shapekit_src)
@@ -896,7 +959,29 @@ def _run_shapekit_inference(input_dir: str, session_dir: str) -> str:
             f"ShapeKit post-processing failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
         ) from e
 
-    if not os.path.isdir(output_dir) or not os.listdir(output_dir):
-        raise RuntimeError(f"ShapeKit produced no output in: {output_dir}")
+    # --- Step 3: reassemble combined_labels.nii.gz with viewer label values ---
+    refined_seg_dir = os.path.join(sk_raw_output, case_id, "segmentations")
+    if not os.path.isdir(refined_seg_dir):
+        raise RuntimeError(f"ShapeKit produced no segmentation output in: {refined_seg_dir}")
 
+    # Start from the original combined labels (preserves labels ShapeKit doesn't touch)
+    result_data = combined_data.copy()
+
+    for organ_file in os.listdir(refined_seg_dir):
+        if not organ_file.endswith(".nii.gz"):
+            continue
+        organ_name   = organ_file[: -len(".nii.gz")]
+        viewer_label = _VIEWER_LABELS.get(organ_name)
+        if viewer_label is None:
+            continue
+        organ_data = np.asarray(nib.load(os.path.join(refined_seg_dir, organ_file)).dataobj)
+        # Clear old pixels for this organ, write refined mask
+        result_data[result_data == viewer_label] = 0
+        result_data[organ_data > 0] = viewer_label
+
+    nib.save(
+        nib.Nifti1Image(result_data, affine, header),
+        os.path.join(output_dir, "combined_labels.nii.gz"),
+    )
+    print(f"[INFO] ShapeKit refined combined_labels saved to {output_dir}")
     return output_dir

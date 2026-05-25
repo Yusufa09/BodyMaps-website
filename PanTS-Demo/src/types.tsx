@@ -116,7 +116,11 @@ export type SegmentationCategories =
 	| "spleen"
 	| "stomach"
 	| "superior_mesenteric_artery"
-	| "veins";
+	| "veins"
+	| "intestine"
+	| "renal_vein_left"
+	| "renal_vein_right"
+	| "cbd_stent";
 
 export type LabelRequest = {
 	name: SegmentationCategories;

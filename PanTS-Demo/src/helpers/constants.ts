@@ -75,6 +75,10 @@ export const segmentation_category_colors: { [key: number]: Color } = {
 	26: [255, 99, 71, 254], // Tomato red
 	27: [255, 69, 0, 254], // Bright red-orange artery
 	28: [106, 90, 205, 254], // Medium slate blue
+	29: [255, 200, 120, 254], // Intestine (warm yellow-orange)
+	30: [100, 149, 237, 254], // Renal vein left (cornflower blue)
+	31: [70, 130, 180, 254],  // Renal vein right (steel blue)
+	32: [192, 192, 192, 254], // CBD stent (silver-gray)
 };
 
 export const segmentation_categories: SegmentationCategories[] = [
@@ -106,6 +110,10 @@ export const segmentation_categories: SegmentationCategories[] = [
 	"stomach",
 	"superior_mesenteric_artery",
 	"veins",
+	"intestine",
+	"renal_vein_left",
+	"renal_vein_right",
+	"cbd_stent",
 ];
 
 export const OrganSystemsArray: Systems[] = [
@@ -142,6 +150,8 @@ export const OrganSystems: OrganSystemsType = {
 		"superior_mesenteric_artery",
 		"postcava",
 		"veins",
+		"renal_vein_left",
+		"renal_vein_right",
 	],
 	"Endocrine System": ["adrenal_gland_left", "adrenal_gland_right"],
 	"Urinary System": [{ Kidneys: ["kidney_left", "kidney_right"] }, "bladder"],
@@ -161,10 +171,12 @@ export const OrganSystems: OrganSystemsType = {
 		},
 		"colon",
 		"duodenum",
+		"intestine",
 		"stomach",
 		"liver",
 		"common_bile_duct",
 		"gall_bladder",
+		"cbd_stent",
 	],
 	"Respiratory System": ["lung_left", "lung_right"],
 	"Reproductive System": ["prostate"],
