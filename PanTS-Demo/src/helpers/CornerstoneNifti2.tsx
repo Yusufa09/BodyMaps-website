@@ -1,4 +1,4 @@
-import { init as coreInit, Enums, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
+import { cache, init as coreInit, Enums, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
 import type { ColorLUT } from "@cornerstonejs/core/types";
 import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init as niftiImageLoaderInit } from "@cornerstonejs/nifti-volume-loader";
 import * as cornerstoneTools from '@cornerstonejs/tools';
@@ -76,6 +76,8 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     if (!toolGroup) {
         throw new Error("Failed to create tool group");
     }
+
+    
     cornerstoneTools.addTool(PanTool);
     cornerstoneTools.addTool(ZoomTool);
     cornerstoneTools.addTool(StackScrollTool);
@@ -100,16 +102,16 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
         currentRenderingEngine.destroy();
         currentRenderingEngine = null;
     }
-
+    
     const renderingEngine = new RenderingEngine(renderingEngineId);
     currentRenderingEngine = renderingEngine;
-
+    
     imageLoader.registerImageLoader("nifti", cornerstoneNiftiImageLoader);
     const imageIds = await createNiftiImageIdsAndCacheMetadata({ url: mainNiftiURL });
     const segmentationImageIds = segmentationURL
-        ? await createNiftiImageIdsAndCacheMetadata({ url: segmentationURL })
-        : [];
-
+    ? await createNiftiImageIdsAndCacheMetadata({ url: segmentationURL })
+    : [];
+    
     const viewportInputArray = [
         {
             viewportId: viewportId1,
@@ -139,7 +141,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
 
     // viewportInputArray.forEach((viewport) => toolGroup)
     viewportInputArray.forEach((viewport) => toolGroup.addViewport(viewport.viewportId, renderingEngineId));
-    toolGroup.setToolActive(PanTool.toolName, {
+    toolGroup.setToolActive(CrosshairsTool.toolName, {
         bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }]
     })
     toolGroup.setToolActive(StackScrollTool.toolName, {
@@ -226,16 +228,15 @@ export function setToolGroupOpacity(opacityValue: number) {
     newSegConfig.fillAlphaInactive = opacityValue;
     newSegConfig.outlineOpacity = opacityValue;
     newSegConfig.outlineOpacityInactive = opacityValue;
-
     segmentation.config.style.setStyle({
         type: csToolsEnums.SegmentationRepresentations.Labelmap,
         segmentationId: segmentationId,
     }, {
         ...DEFAULT_SEGMENTATION_CONFIG,
-        fillAlpha: opacityValue,
-        fillAlphaInactive: opacityValue,
-        outlineOpacity: opacityValue,
-        outlineOpacityInactive: opacityValue,
+        fillAlpha: opacityValue / 2.4,
+        fillAlphaInactive: opacityValue / 2.4,
+        outlineOpacity: opacityValue / 2.4,
+        outlineOpacityInactive: opacityValue / 2.4,
 
     });
     if (currentRenderingEngine) {
@@ -291,7 +292,6 @@ export function centerOnCursor(){
   if (!engine) return;
   const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
   if (!toolGroup) return;
-  console.log(toolGroup.getToolInstance(CrosshairsTool.toolName).toolCenter);
   const toolCenter = toolGroup.getToolInstance(CrosshairsTool.toolName).toolCenter;
   [viewportId1, viewportId2, viewportId3].forEach((viewportId) => {
     const viewport = engine.getViewport(viewportId);
@@ -307,4 +307,30 @@ export function centerOnCursor(){
     // }
     viewport.render();
     })
+}
+
+export function getOrganLabelOnClick() {
+    const engine = getRenderingEngine(renderingEngineId);
+    if (!engine) return;
+    const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+    if (!toolGroup) return;
+    const toolCenter = toolGroup.getToolInstance(CrosshairsTool.toolName).toolCenter.map((c: number) => Math.round(c));
+    const volume = cache.getVolume(segmentationId);
+    if (!volume || !volume.voxelManager) return;
+    const indices = [viewportId2, viewportId3, viewportId1].map((viewportId) => {
+      const viewport = engine.getViewport(viewportId);
+      const idx = viewport.getSliceIndex();
+    //   if (viewportId === viewportId1) {
+    //       return volume.voxelManager.dimensions[2] - idx;
+    //   }
+      return idx;
+    })
+
+    // volume.voxelManager.forEach(({value, index, pointIJK}) => {
+    //     if (value === 14) {
+    //         console.log(pointIJK);
+    //     }
+    // })
+    const idx = volume.voxelManager.getAtIJK(indices[0], indices[1], indices[2]);
+    return idx;
 }

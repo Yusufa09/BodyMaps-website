@@ -16,19 +16,20 @@ import SnakeGame from "../components/SnakeGame/SnakeGame";
 import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
+    getOrganLabelOnClick,
     renderVisualization,
     setToolGroupOpacity,
     setVisibilities,
     toggleCrosshairTool
 } from "../helpers/CornerstoneNifti2";
-import { create3DVolume, create3DVolumeFew, updateVisibilities } from "../helpers/NiiVueNifti";
+import { create3DVolume, updateVisibilities } from "../helpers/NiiVueNifti";
 import {
     API_BASE,
     APP_CONSTANTS,
     segmentation_categories,
     segmentation_category_colors,
 } from "../helpers/constants";
-import { closestColorIndex, filenameToName, getPanTSId } from "../helpers/utils";
+import { filenameToName, getPanTSId } from "../helpers/utils";
 import { type CheckBoxData, type LastClicked, type NColorMap } from "../types";
 import "./VisualizationPage.css";
 
@@ -92,45 +93,6 @@ function VisualizationPage() {
 	});
 
 	// const location = useLocation();
-	const handleCanvasClick = (e: MouseEvent<HTMLCanvasElement>) => {
-		if (!render_ref || !render_ref.current) return;
-		const canvas = render_ref.current;
-
-		const rect = canvas.getBoundingClientRect();
-
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
-
-		const scaleX = canvas.width / rect.width;
-		const scaleY = canvas.height / rect.height;
-
-		const cx = Math.floor(x * scaleX);
-		const cy = Math.floor(y * scaleY);
-
-		const gl = canvas.getContext("webgl2");
-		if (!gl) return;
-		const pixels = new Uint8Array(4);
-		gl.readPixels(cx, canvas.height - cy, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-		// get closest 
-		console.log(pixels[0], pixels[1], pixels[2], pixels[3])
-		const index = closestColorIndex([...pixels], labelColorMap);
-		const label = segmentation_categories[index - 1]
-		if (pixels[0] === 0 && pixels[1] === 0 && pixels[2] === 0) {
-			setToolTip({
-				visible: false,
-				x: 0,
-				y: 0,
-				text: "",
-			})
-			return;
-		}
-		setToolTip({
-			visible: false,
-			x: e.clientX + 10,
-			y: e.clientY + 10,
-			text: label
-		})
-	}
 	// Load and render visualization on first render
 
 	useEffect(() => {
@@ -287,15 +249,15 @@ function VisualizationPage() {
 				true, // ID=0 background 永远可见
 				...checkBoxData.map((item) => !!checkState[item.id]),
 			];
-			const visible = checkStateArr.map((item, idx) => item === true ? idx - 1 : null).filter((item) => item !== null);
-			if (visible.length !== checkBoxData.length+1 && visible.length !== 1) {
-				visible.splice(0, 1);
-				console.log(visible.map((item) => segmentation_categories[item]));
-				create3DVolumeFew(render_ref, labelColorMap, getPanTSId(pantsCase ?? "1"), visible);
-			}
-			else {
-				updateVisibilities(NV, checkStateArr, sessionKey, cmapRef.current);
-			}
+			// const visible = checkStateArr.map((item, idx) => item === true ? idx - 1 : null).filter((item) => item !== null);
+			// if (visible.length !== checkBoxData.length+1 && visible.length !== 1) {
+			// 	visible.splice(0, 1);
+			// 	console.log(visible.map((item) => segmentation_categories[item]));
+			// 	create3DVolumeFew(render_ref, labelColorMap, getPanTSId(pantsCase ?? "1"), visible);
+			// }
+			// else {
+			updateVisibilities(NV, checkStateArr, sessionKey, cmapRef.current);
+			// }
 			setVisibilities(checkStateArr);
 		}
 	}, [
@@ -335,6 +297,18 @@ function VisualizationPage() {
 		link.click();
 		document.body.removeChild(link);
 		window.URL.revokeObjectURL(url);
+	};
+
+	const handleMouseClick = async (e: MouseEvent) => {
+		const idx = getOrganLabelOnClick();
+		if (idx === undefined || typeof idx !== "number") return;
+		const label = segmentation_categories[idx-1];
+		setToolTip({
+			visible: true,
+			x: e.clientX + 10,
+			y: e.clientY + 10,
+			text: label
+		});
 	};
 
 	const navBack = () => {
@@ -523,17 +497,9 @@ function VisualizationPage() {
 					<div
 						className={`axial ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-red-500"}`}
 						ref={axial_ref}
-						onMouseDown={(e) =>
-							setLastClicked({
-								orientation: "axial",
-								x: Math.floor(
-									e.clientX - e.currentTarget.getBoundingClientRect().left
-								),
-								y: Math.floor(
-									e.clientY - e.currentTarget.getBoundingClientRect().top
-								),
-							})
-						}
+						onClick={(e) => {
+							handleMouseClick(e);
+						}}
 					// onScroll={() => {
 					// 	const progress = getSlicePercent("CT_NIFTI_AXIAL");
 					// 	if (axialSliceProgress !== progress) setAxialSliceProgress(progress);
@@ -542,40 +508,23 @@ function VisualizationPage() {
 					<div
 						className={`sagittal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-yellow-500"}`}
 						ref={sagittal_ref}
-						onMouseDown={(e) =>
-							setLastClicked({
-								orientation: "sagittal",
-								x: Math.floor(
-									e.clientX - e.currentTarget.getBoundingClientRect().left
-								),
-								y: Math.floor(
-									e.clientY - e.currentTarget.getBoundingClientRect().top
-								),
-							})
-						}
+						onClick={(e) => {
+							handleMouseClick(e);
+						}}
 					></div>
 
 					<div
 						className={`coronal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-green-500"}`}
 						ref={coronal_ref}
-						onMouseDown={(e) =>
-							setLastClicked({
-								orientation: "coronal",
-								x: Math.floor(
-									e.clientX - e.currentTarget.getBoundingClientRect().left
-								),
-								y: Math.floor(
-									e.clientY - e.currentTarget.getBoundingClientRect().top
-								),
-							})
-						}
+						onClick={(e) => {
+							handleMouseClick(e);
+						}}
 					></div>
 
 					<div className={`render`}>
 						<div className="canvas">
 							<canvas
 								ref={render_ref}
-								onClick={(e) => handleCanvasClick(e)}
 							// width={800} 
 							// height={800} 
 							// style={{ width: "100%", height: "100%" }}

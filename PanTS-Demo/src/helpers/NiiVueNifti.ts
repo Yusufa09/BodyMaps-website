@@ -10,9 +10,6 @@ export async function create3DVolume(canvasRef: React.RefObject<HTMLCanvasElemen
     sliceType: SLICE_TYPE.RENDER, 
   });
   nv.setInterpolation(true);
-  nv.onLocationChange = (data) => {
-    console.log(data)
-  }
   nv.mouseMove = (x: number, y: number): void => {
     x *= nv.uiData.dpr!
     y *= nv.uiData.dpr!
@@ -119,9 +116,6 @@ export async function create3DVolumeFew(canvasRef: React.RefObject<HTMLCanvasEle
     sliceType: SLICE_TYPE.RENDER, 
   });
   nv.setInterpolation(true);
-  nv.onClickToSegment = (data) => {
-    console.log(data)
-  }
   nv.mouseMove = (x: number, y: number): void => {
     x *= nv.uiData.dpr!
     y *= nv.uiData.dpr!
