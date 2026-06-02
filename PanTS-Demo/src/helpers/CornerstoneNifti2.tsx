@@ -314,7 +314,8 @@ export function getOrganLabelOnClick() {
     if (!engine) return;
     const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
     if (!toolGroup) return;
-    const toolCenter = toolGroup.getToolInstance(CrosshairsTool.toolName).toolCenter.map((c: number) => Math.round(c));
+    const toolActive = toolGroup.getToolInstance(CrosshairsTool.toolName).mode;
+    if (toolActive !== csToolsEnums.ToolModes.Active) return;
     const volume = cache.getVolume(segmentationId);
     if (!volume || !volume.voxelManager) return;
     const indices = [viewportId2, viewportId3, viewportId1].map((viewportId) => {

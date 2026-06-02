@@ -301,7 +301,15 @@ function VisualizationPage() {
 
 	const handleMouseClick = async (e: MouseEvent) => {
 		const idx = getOrganLabelOnClick();
-		if (idx === undefined || typeof idx !== "number") return;
+		if (idx === undefined || typeof idx !== "number") {
+			setToolTip({
+				visible: false,
+				x: 0,
+				y: 0,
+				text: "",
+			})
+			return;
+		};
 		const label = segmentation_categories[idx-1];
 		setToolTip({
 			visible: true,
