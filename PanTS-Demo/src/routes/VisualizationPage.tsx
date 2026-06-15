@@ -6,7 +6,7 @@ import {
     IconDownload, IconHome, IconPointer, IconReport,
     IconSettings
 } from "@tabler/icons-react";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import React, { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useParams } from "react-router-dom";
 import RotatingModelLoader from "../components/Loading";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
@@ -17,12 +17,14 @@ import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
     getOrganLabelOnClick,
+    moveCornerstoneCrosshairToMm,
     renderVisualization,
     setToolGroupOpacity,
     setVisibilities,
+    subscribeToCrosshairChanges,
     toggleCrosshairTool
 } from "../helpers/CornerstoneNifti2";
-import { create3DVolume, updateVisibilities } from "../helpers/NiiVueNifti";
+import { create3DVolume, moveNiiVueCrosshairToMm, updateVisibilities } from "../helpers/NiiVueNifti";
 import {
     API_BASE,
     APP_CONSTANTS,
@@ -30,8 +32,17 @@ import {
     segmentation_category_colors,
 } from "../helpers/constants";
 import { filenameToName, getPanTSId } from "../helpers/utils";
-import { type CheckBoxData, type LastClicked, type NColorMap } from "../types";
+import { type CheckBoxData, type NColorMap } from "../types";
 import "./VisualizationPage.css";
+
+type ViewMode = "mpr" | "axial" | "sagittal" | "coronal" | "3d";
+
+const CT_PRESETS = [
+	{ name: "Soft Tissue", width: 400, center: 40 },
+	{ name: "Bone", width: 1800, center: 400 },
+	{ name: "Lung", width: 1500, center: -600 },
+	{ name: "Liver", width: 150, center: 30 },
+] as const;
 
 function VisualizationPage() {
 	// References and state
@@ -75,7 +86,6 @@ function VisualizationPage() {
 	const [viewportIds, setViewportIds] = useState<string[]>([]);
 	const [volumeId, setVolumeId] = useState<string | null>(null);
 	const [showReportScreen, setShowReportScreen] = useState(false);
-	const [_lastClicked, setLastClicked] = useState<LastClicked | null>(null);
 	const [showTaskDetails, setShowTaskDetails] = useState(true);
 	const [showOrganDetails, setShowOrganDetails] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -85,6 +95,8 @@ function VisualizationPage() {
 	const [zoomMode, setZoomMode] = useState(false);
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
+	const [viewMode, setViewMode] = useState<ViewMode>("mpr");
+	const [activePreset, setActivePreset] = useState<string>("Soft Tissue");
 	const [tooltip, setToolTip] = useState({
 		visible: false,	
 		x: 0,
@@ -161,10 +173,16 @@ function VisualizationPage() {
 			const { nv, cmapCopy } = await create3DVolume(
 				render_ref,
 				segUrl,
-				labelColorMap
+				labelColorMap,
+				(mm) => moveCornerstoneCrosshairToMm(mm as [number, number, number])
 			);
 			cmapRef.current = cmapCopy;
 			setNV(nv);
+
+			// Cornerstone → NiiVue: when crosshair moves in any 2D view, sync to 3D
+			subscribeToCrosshairChanges((mm) => {
+				moveNiiVueCrosshairToMm(nv, mm);
+			});
 		};
 
 		setup();
@@ -241,6 +259,29 @@ function VisualizationPage() {
 			handleWindowChange(windowWidth, windowCenter);
 		}
 	}, [renderingEngine, viewportIds, volumeId]);
+
+	// Resize Cornerstone + NiiVue when view mode changes
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (renderingEngine) {
+				renderingEngine.resize(true);
+				renderingEngine.render();
+			}
+			if (NV) NV.resizeListener();
+		}, 50);
+		return () => clearTimeout(timer);
+	}, [viewMode, renderingEngine, NV]);
+
+	const handlePresetClick = (preset: typeof CT_PRESETS[number]) => {
+		setActivePreset(preset.name);
+		handleWindowChange(preset.width, preset.center);
+	};
+
+	const panelStyle = (panel: "axial" | "sagittal" | "coronal" | "3d"): React.CSSProperties => {
+		if (viewMode === "mpr") return {};
+		if (viewMode === panel) return { position: "absolute", inset: 0, zIndex: 10 };
+		return { visibility: "hidden" };
+	};
 
 	// Update segmentation visibility when state changes
 	useEffect(() => {
@@ -320,7 +361,7 @@ function VisualizationPage() {
 	};
 
 	const navBack = () => {
-		window.location.href = "/home.html";
+		window.location.href = "/dashboard";
 	};
 	// const PREVIEW_IDS = [1, 17, 30, 35, 121];
 
@@ -341,29 +382,30 @@ function VisualizationPage() {
 			}}
 		>
 			<div style={{ position: "relative" }}>
-				<div className="sidebar position-absolute z-3 top-0 left-0">
+				{/* Branded viewer top bar — pointer-events-none so CT pane clicks pass through */}
+				<div className="pointer-events-none absolute top-0 left-0 z-10 flex w-full items-center justify-between bg-gradient-to-b from-black/75 via-black/35 to-transparent px-6 pt-3 pb-8">
+					{/* spacer keeps the wordmark clear of the settings/home buttons */}
+					<div className="pointer-events-auto flex w-32 shrink-0 justify-end" />
+				</div>
+				<div className="sidebar" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50 }}>
 					<div>
-						<div className="flex">
+						<div className="flex" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50, padding: '16px 0 0 16px', gap: '8px' }}>
 							<div
-								className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
+								className="hover:bg-gray-700 cursor-pointer bg-[#16181d] p-2 rounded-lg w-fit"
 								onClick={() => setShowTaskDetails((prev) => !prev)}
 							>
 								<IconSettings color="white" />
-								{/* {showTaskDetails ? "Settings" : "Settings"} */}
 							</div>
-							{/* {showTaskDetails ? ( */}
 							<div
-								className={`hover:bg-gray-700 z-4 cursor-pointer bg-[#0f0824] p-2 ml-4 mt-4 rounded-lg w-fit`}
+								className="hover:bg-gray-700 cursor-pointer bg-[#16181d] p-2 rounded-lg w-fit"
 								onClick={() => navBack()}
 							>
 								<IconHome color="white" />
-								{/* {showTaskDetails ? "Settings" : "Settings"} */}
 							</div>
-							{/* ) : null} */}
 						</div>
 						<div
-							className={`text-black bg-[#0f0824] z-3 rounded-lg w-64 h-dvh p-4 pt-14 gap-3 flex flex-col absolute top-0 left-0 transition-all duration-300 ease-in-out origin-left ${showTaskDetails ? "translate-x-[-64rem]" : "translate-x-0"
-								}`}
+							className={`text-black bg-[#16181d] rounded-lg w-64 h-dvh p-4 pt-14 gap-3 flex flex-col transition-all duration-300 ease-in-out origin-left ${showTaskDetails ? "translate-x-[-64rem]" : "translate-x-0"}`}
+							style={{ position: 'fixed', top: 0, left: 0, zIndex: 49 }}
 						>
 							{/* Toggle dropdown */}
 
@@ -381,15 +423,51 @@ function VisualizationPage() {
 									</div>
 
 									<>
-										<OpacitySlider
-											opacityValue={opacityValue}
-											handleOpacityOnSliderChange={
-												handleOpacityOnSliderChange
-											}
-											handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
-											setShowOrganDetails={setShowOrganDetails}
-											setShowTaskDetails={setShowTaskDetails}
-										/>
+										{/* View mode */}
+									<div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "10px", padding: "12px" }}>
+										<div className="text-white text-sm font-semibold mb-2 text-center">View</div>
+										<div className="flex flex-wrap gap-1 justify-center">
+											{([
+												{ mode: "mpr" as ViewMode, label: "⊞ MPR" },
+												{ mode: "axial" as ViewMode, label: "Axial" },
+												{ mode: "sagittal" as ViewMode, label: "Sag" },
+												{ mode: "coronal" as ViewMode, label: "Cor" },
+												{ mode: "3d" as ViewMode, label: "3D" },
+											]).map(({ mode, label }) => (
+												<button key={mode} onClick={() => setViewMode(mode)} style={{
+													padding: "4px 10px", borderRadius: "6px", fontSize: "12px",
+													fontWeight: 600, border: "none", cursor: "pointer",
+													background: viewMode === mode ? "#ffffff" : "rgba(255,255,255,0.1)",
+													color: viewMode === mode ? "#08090b" : "rgba(255,255,255,0.6)",
+												}}>{label}</button>
+											))}
+										</div>
+									</div>
+
+									{/* CT Window presets */}
+									<div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "10px", padding: "12px" }}>
+										<div className="text-white text-sm font-semibold mb-2 text-center">CT Window</div>
+										<div className="flex flex-wrap gap-1 justify-center">
+											{CT_PRESETS.map((preset) => (
+												<button key={preset.name} onClick={() => handlePresetClick(preset)} style={{
+													padding: "4px 10px", borderRadius: "6px", fontSize: "12px",
+													fontWeight: 600, border: "none", cursor: "pointer",
+													background: activePreset === preset.name ? "#ffffff" : "rgba(255,255,255,0.1)",
+													color: activePreset === preset.name ? "#08090b" : "rgba(255,255,255,0.6)",
+												}}>{preset.name}</button>
+											))}
+										</div>
+									</div>
+
+									<OpacitySlider
+										opacityValue={opacityValue}
+										handleOpacityOnSliderChange={
+											handleOpacityOnSliderChange
+										}
+										handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
+										setShowOrganDetails={setShowOrganDetails}
+										setShowTaskDetails={setShowTaskDetails}
+									/>
 
 										<WindowingSlider
 											windowWidth={windowWidth}
@@ -476,7 +554,7 @@ function VisualizationPage() {
           loading ?
           <div className="flex z-3 absolute top-0 left-0 w-screen h-screen items-center justify-center">
               <div role="status">
-                  <svg aria-hidden="true" className="w-8 h-8 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor"/><path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill"/></svg>
+                  <svg aria-hidden="true" className="w-8 h-8 text-gray-200 animate-spin dark:text-gray-600 fill-white" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor"/><path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill"/></svg>
                   <span className="sr-only">Loading...</span>
               </div>
           </div>
@@ -505,31 +583,24 @@ function VisualizationPage() {
 					<div
 						className={`axial ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-red-500"}`}
 						ref={axial_ref}
-						onClick={(e) => {
-							handleMouseClick(e);
-						}}
-					// onScroll={() => {
-					// 	const progress = getSlicePercent("CT_NIFTI_AXIAL");
-					// 	if (axialSliceProgress !== progress) setAxialSliceProgress(progress);
-					// }}
+						style={panelStyle("axial")}
+						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 					<div
 						className={`sagittal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-yellow-500"}`}
 						ref={sagittal_ref}
-						onClick={(e) => {
-							handleMouseClick(e);
-						}}
+						style={panelStyle("sagittal")}
+						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 
 					<div
 						className={`coronal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-green-500"}`}
 						ref={coronal_ref}
-						onClick={(e) => {
-							handleMouseClick(e);
-						}}
+						style={panelStyle("coronal")}
+						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 
-					<div className={`render`}>
+					<div className={`render`} style={panelStyle("3d")}>
 						<div className="canvas">
 							<canvas
 								ref={render_ref}

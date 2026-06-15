@@ -26,6 +26,7 @@ export default function InferenceUpload() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [_sessionId, setSessionId] = useState("");
+  const [dropHover, setDropHover] = useState(false);
 
   const stopPoll = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -35,6 +36,7 @@ export default function InferenceUpload() {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setDropHover(false);
     const file = e.dataTransfer.files[0];
     if (file && (file.name.endsWith(".nii") || file.name.endsWith(".nii.gz"))) {
       setSelectedFile(file);
@@ -85,7 +87,6 @@ export default function InferenceUpload() {
     const sid = crypto.randomUUID();
     const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
 
-    // Upload
     setPhase("uploading");
     setProgress(0);
     setStatusText(`Uploading ${selectedFile.name}…`);
@@ -113,7 +114,6 @@ export default function InferenceUpload() {
       const finalData = await parseApiResponse(finalRes);
       if (!finalRes.ok) throw new Error(finalData.error);
 
-      // Run inference
       setStatusText(`Running ${selectedModel}…`);
       const inferFd = new FormData();
       inferFd.append("session_id", sid);
@@ -134,55 +134,107 @@ export default function InferenceUpload() {
   const isRunning = phase === "uploading" || phase === "inferencing";
   const canRun = !!selectedFile && !!selectedModel && !isRunning;
 
-  const phaseLabel = phase === "uploading"
-    ? `Uploading… ${progress}%`
-    : phase === "inferencing"
-    ? `Running ${selectedModel}… ${progress}%`
-    : phase === "done"
-    ? "Done! Opening viewer…"
-    : "";
+  const phaseLabel =
+    phase === "uploading"
+      ? `Uploading… ${progress}%`
+      : phase === "inferencing"
+      ? `Running ${selectedModel}… ${progress}%`
+      : phase === "done"
+      ? "Done! Opening viewer…"
+      : "";
+
+  const hasFile = !!selectedFile;
+  const isActive = dropHover || hasFile;
 
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-md mx-auto">
-      {/* Upload box */}
+    <div className="flex flex-col gap-3 w-full">
+      {/* Drop zone */}
       <div
-        className={`w-full border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-2 cursor-pointer transition-colors
-          ${selectedFile ? "border-blue-400 bg-blue-950/30" : "border-gray-500 hover:border-gray-300 bg-gray-900/40"}`}
+        className="w-full rounded-xl flex flex-col items-center gap-2 cursor-pointer transition-all duration-200"
+        style={{
+          padding: "28px 20px",
+          border: `1.5px dashed ${isActive ? "rgba(45,212,191,0.55)" : "rgba(255,255,255,0.12)"}`,
+          background: isActive
+            ? "rgba(45,212,191,0.05)"
+            : "rgba(255,255,255,0.02)",
+          boxShadow: isActive
+            ? "0 0 24px rgba(45,212,191,0.06) inset"
+            : "none",
+        }}
         onClick={() => fileInputRef.current?.click()}
-        onDragOver={e => e.preventDefault()}
+        onDragOver={(e) => { e.preventDefault(); setDropHover(true); }}
+        onDragLeave={() => setDropHover(false)}
         onDrop={handleDrop}
       >
-        <IconCloudUpload size={40} className={selectedFile ? "text-blue-400" : "text-gray-400"} />
+        <IconCloudUpload
+          size={36}
+          style={{ color: hasFile ? "rgb(45,212,191)" : "rgba(255,255,255,0.3)" }}
+        />
         {selectedFile ? (
-          <span className="text-sm text-blue-300 font-medium text-center break-all">{selectedFile.name}</span>
+          <span
+            className="font-medium text-center break-all"
+            style={{ fontSize: "12px", color: "rgb(45,212,191)" }}
+          >
+            {selectedFile.name}
+          </span>
         ) : (
           <>
-            <span className="text-sm text-gray-300 font-medium">Click or drag to upload</span>
-            <span className="text-xs text-gray-500">.nii or .nii.gz</span>
+            <span
+              className="font-medium"
+              style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)" }}
+            >
+              Click or drag to upload
+            </span>
+            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.28)" }}>
+              .nii or .nii.gz
+            </span>
           </>
         )}
-        <input ref={fileInputRef} type="file" accept=".nii,.gz" className="hidden" onChange={handleFileChange} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".nii,.gz"
+          className="hidden"
+          onChange={handleFileChange}
+        />
       </div>
 
       {/* Model selector + Run */}
       <div className="flex gap-2 w-full">
         <select
-          className="flex-1 bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 text-sm cursor-pointer"
+          className="flex-1 rounded-lg text-sm cursor-pointer outline-none"
+          style={{
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            color: selectedModel ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.3)",
+            padding: "9px 12px",
+          }}
           value={selectedModel}
-          onChange={e => setSelectedModel(e.target.value as Model)}
+          onChange={(e) => setSelectedModel(e.target.value as Model)}
           disabled={isRunning}
         >
-          <option value="" disabled>Select a model</option>
-          <option value="ePAI">ePAI</option>
-          <option value="SuPreM">SuPreM</option>
-          <option value="MedFormer">MedFormer</option>
-          <option value="R-Super">R-Super</option>
-          <option value="OpenVAE">OpenVAE</option>
-          <option value="Atlas-Net">Atlas-Net</option>
+          <option value="" disabled style={{ background: "#0f1a2e" }}>
+            Select a model
+          </option>
+          {["ePAI", "SuPreM", "MedFormer", "R-Super", "OpenVAE", "Atlas-Net"].map((m) => (
+            <option key={m} value={m} style={{ background: "#0f1a2e" }}>
+              {m}
+            </option>
+          ))}
         </select>
+
         <button
-          className={`px-5 py-2 rounded-lg text-sm font-bold transition-colors
-            ${canRun ? "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}
+          className="rounded-lg text-sm font-semibold transition-all duration-200"
+          style={{
+            padding: "9px 22px",
+            background: canRun
+              ? "linear-gradient(135deg, rgba(45,212,191,0.9), rgba(34,211,238,0.85))"
+              : "rgba(255,255,255,0.07)",
+            color: canRun ? "#050c1a" : "rgba(255,255,255,0.22)",
+            cursor: canRun ? "pointer" : "not-allowed",
+            boxShadow: canRun ? "0 0 20px rgba(45,212,191,0.25)" : "none",
+            border: "none",
+          }}
           onClick={handleRun}
           disabled={!canRun}
         >
@@ -190,19 +242,40 @@ export default function InferenceUpload() {
         </button>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress / status */}
       {isRunning || phase === "done" ? (
-        <div className="w-full flex flex-col gap-1">
-          <div className="text-xs text-gray-400 text-center">{phaseLabel}</div>
-          <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+        <div className="flex flex-col gap-1.5">
+          <div
+            style={{
+              fontSize: "11px",
+              color: "rgba(255,255,255,0.4)",
+              textAlign: "center",
+            }}
+          >
+            {phaseLabel}
+          </div>
+          <div
+            className="w-full rounded-full overflow-hidden"
+            style={{ height: "3px", background: "rgba(255,255,255,0.07)" }}
+          >
             <div
-              className="h-full bg-blue-500 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${progress}%`,
+                background:
+                  "linear-gradient(90deg, rgb(45,212,191), rgb(34,211,238))",
+                boxShadow: "0 0 8px rgba(45,212,191,0.5)",
+              }}
             />
           </div>
         </div>
       ) : statusText ? (
-        <p className="text-xs text-red-400 text-center">{statusText}</p>
+        <p
+          className="text-center"
+          style={{ fontSize: "11px", color: "rgba(239,68,68,0.85)" }}
+        >
+          {statusText}
+        </p>
       ) : null}
     </div>
   );

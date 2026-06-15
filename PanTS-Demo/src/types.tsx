@@ -47,6 +47,7 @@ export type FileContextType = {
 export type PreviewType = {
 	sex: string;
 	age: number;
+	tumor: number;
 }
 
 export type Interactions = "Bounding Box" | "Scribble" | "Point" | "";

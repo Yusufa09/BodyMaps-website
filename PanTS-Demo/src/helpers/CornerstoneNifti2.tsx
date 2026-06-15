@@ -1,4 +1,4 @@
-import { cache, init as coreInit, Enums, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
+import { cache, eventTarget, init as coreInit, Enums, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
 import type { ColorLUT } from "@cornerstonejs/core/types";
 import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init as niftiImageLoaderInit } from "@cornerstonejs/nifti-volume-loader";
 import * as cornerstoneTools from '@cornerstonejs/tools';
@@ -39,6 +39,36 @@ const viewportId2 = "CT_NIFTI_SAGITTAL";
 const viewportId3 = "CT_NIFTI_CORONAL";
 
 let currentRenderingEngine: RenderingEngine | null = null;
+
+// Crosshair sync state
+let _crosshairChangeCallback: ((mm: number[]) => void) | null = null;
+let _isSyncing = false;
+let _crosshairListenerRegistered = false;
+
+function _handleCrosshairCenterChanged(evt: Event) {
+    if (_isSyncing) return;
+    const toolCenter = (evt as CustomEvent).detail?.toolCenter as number[] | undefined;
+    if (toolCenter && _crosshairChangeCallback) {
+        _crosshairChangeCallback(toolCenter);
+    }
+}
+
+export function subscribeToCrosshairChanges(cb: (mm: number[]) => void) {
+    _crosshairChangeCallback = cb;
+}
+
+export function moveCornerstoneCrosshairToMm(mm: [number, number, number]) {
+    const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+    if (!toolGroup) return;
+    const tool = toolGroup.getToolInstance(CrosshairsTool.toolName) as any;
+    if (!tool?.setToolCenter) return;
+    _isSyncing = true;
+    try {
+        tool.setToolCenter(mm, true); // suppressEvents=true prevents re-triggering
+    } finally {
+        _isSyncing = false;
+    }
+}
 const viewportColors: Record<viewportIdTypes, string> = {
     [viewportId1]: 'rgb(200, 0, 0)',
     [viewportId2]: 'rgb(200, 200, 0)',
@@ -98,6 +128,11 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
         },
         handleRadius:8
     })
+    if (!_crosshairListenerRegistered) {
+        eventTarget.addEventListener(cornerstoneTools.Enums.Events.CROSSHAIR_TOOL_CENTER_CHANGED, _handleCrosshairCenterChanged);
+        _crosshairListenerRegistered = true;
+    }
+
     if (currentRenderingEngine) {
         currentRenderingEngine.destroy();
         currentRenderingEngine = null;

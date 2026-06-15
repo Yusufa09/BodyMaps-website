@@ -34,6 +34,24 @@ import requests  # ⭐ 只在這裡 import 一次 requests
 api_blueprint = Blueprint("api", __name__)
 last_session_check = datetime.now()
 
+def _load_metadata_cache():
+    try:
+        xlsx_path = os.path.join(Constants.PANTS_PATH, "data", "metadata.xlsx")
+        df = pd.read_excel(xlsx_path, engine="openpyxl")
+        cache = {}
+        for _, row in df.iterrows():
+            pid = str(row.iloc[0])
+            cache[pid] = {
+                "sex": row.iloc[4] if pd.notna(row.iloc[4]) else "",
+                "age": row.iloc[5] if pd.notna(row.iloc[5]) else "",
+                "tumor": int(row.iloc[13]) if pd.notna(row.iloc[13]) else 0,
+            }
+        return cache
+    except Exception:
+        return {}
+
+_METADATA_CACHE = _load_metadata_cache()
+
 progress_tracker = {}  # {session_id: (start_time, expected_total_seconds)}
 
 INFERENCE_QUEUE_DIR = os.getenv(
@@ -149,23 +167,12 @@ def _arg(name: str, default=None):
 
 @api_blueprint.route('/get_preview/<clabel_ids>', methods=['GET'])
 def get_preview(clabel_ids):
-    # get age and thumbnail
     clabel_ids = clabel_ids.split(",")
-    wb = load_workbook(os.path.join(Constants.PANTS_PATH, "data", "metadata.xlsx"))
-    sheet = wb["PanTS_metadata"]
-    res = {
-        x: {
-            "sex": "",
-            "age": ""
-        } for x in clabel_ids
-    }
+    res = {}
     for clabel_id in clabel_ids:
-        for row in sheet.iter_rows(values_only=True):
-            if row[0] == get_panTS_id(clabel_id):
-                res[clabel_id]["sex"] = row[4]
-                res[clabel_id]["age"] = row[5]
-                break
-
+        pid = get_panTS_id(clabel_id)
+        entry = _METADATA_CACHE.get(pid, {"sex": "", "age": "", "tumor": 0})
+        res[clabel_id] = entry
     return jsonify(res)
 
 # if not preloaded

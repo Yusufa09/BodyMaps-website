@@ -1,20 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './UploadPage.css';
-import {
-  IconPlus,
-  IconArrowUp,
-} from "@tabler/icons-react";
 import { API_BASE } from '../helpers/constants';
-
-interface UploadPageProps {}
+import Header from '../components/Header';
 
 const parseApiResponse = async (res: Response): Promise<any> => {
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
     return res.json();
   }
-
   const text = await res.text();
   const shortBody = text.slice(0, 200).replace(/\s+/g, " ").trim();
   throw new Error(
@@ -22,10 +16,68 @@ const parseApiResponse = async (res: Response): Promise<any> => {
   );
 };
 
-const UploadPage: React.FC<UploadPageProps> = () => {
+/* ── Recent uploads (persisted in the user's localStorage, like JHU's recentIds) ── */
+type RecentUploadStatus = "Processing" | "Completed" | "Failed";
+type RecentUpload = {
+  sessionId: string;
+  label: string;
+  model: string;
+  status: RecentUploadStatus;
+  timestamp: number;
+  isReconstruction?: boolean;
+};
+
+const RECENT_UPLOADS_KEY = "recentUploads";
+const MAX_RECENT_UPLOADS = 8;
+
+const loadRecentUploads = (): RecentUpload[] => {
+  try {
+    const arr = JSON.parse(localStorage.getItem(RECENT_UPLOADS_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistRecentUploads = (list: RecentUpload[]) => {
+  try {
+    localStorage.setItem(RECENT_UPLOADS_KEY, JSON.stringify(list.slice(0, MAX_RECENT_UPLOADS)));
+  } catch (e) {
+    console.warn("saveRecentUploads failed", e);
+  }
+};
+
+const addRecentUpload = (entry: RecentUpload): RecentUpload[] => {
+  const list = [entry, ...loadRecentUploads().filter((u) => u.sessionId !== entry.sessionId)];
+  const trimmed = list.slice(0, MAX_RECENT_UPLOADS);
+  persistRecentUploads(trimmed);
+  return trimmed;
+};
+
+const updateRecentUploadStatus = (sessionId: string, status: RecentUploadStatus): RecentUpload[] => {
+  const list = loadRecentUploads().map((u) => (u.sessionId === sessionId ? { ...u, status } : u));
+  persistRecentUploads(list);
+  return list;
+};
+
+const formatRelativeTime = (ts: number): string => {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "Yesterday" : `${days} days ago`;
+};
+
+const recentStatusColor = (status: RecentUploadStatus): string =>
+  status === "Failed" ? "#ef4444" : status === "Processing" ? "#6a6a6a" : "#8f8f8f";
+
+const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const inferencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [message, setMessage] = useState<string>("");
   const [serverPath, setServerPath] = useState<string>("");
@@ -38,32 +90,53 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   const [isInferencing, setIsInferencing] = useState<boolean>(false);
   const [inferenceCompleted, setInferenceCompleted] = useState<boolean>(false);
   const [selectedModel, setSelectedModel] = useState<"ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "">("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [recentUploads, setRecentUploads] = useState<RecentUpload[]>(() => loadRecentUploads());
 
   const allowedExtensions = [".nii", ".nii.gz"];
 
+  /* ── File handling ── */
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-
     const filteredFiles = Array.from(e.target.files).filter(file =>
       allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
     );
-
     if (filteredFiles.length === 0) {
       alert("Please select .nii or .nii.gz files only");
       return;
     }
-
     setSelectedFiles(prev => [...prev, ...filteredFiles]);
   };
 
-  const handlePlusClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!e.dataTransfer.files) return;
+    const filteredFiles = Array.from(e.dataTransfer.files).filter(file =>
+      allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+    );
+    if (filteredFiles.length === 0) {
+      alert("Please drop .nii or .nii.gz files only");
+      return;
+    }
+    setSelectedFiles(prev => [...prev, ...filteredFiles]);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
 
   const removeFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  /* ── Inference polling ── */
   const stopInferencePolling = () => {
     if (inferencePollRef.current) {
       clearInterval(inferencePollRef.current);
@@ -71,7 +144,7 @@ const UploadPage: React.FC<UploadPageProps> = () => {
     }
   };
 
-  const startInferencePolling = (sid: string) => {
+  const startInferencePolling = (sid: string, model: string) => {
     stopInferencePolling();
     setIsInferencing(true);
     setInferenceProgress(5);
@@ -80,27 +153,32 @@ const UploadPage: React.FC<UploadPageProps> = () => {
       try {
         const res = await fetch(`${API_BASE}/api/inference-status/${sid}`);
         const data = await parseApiResponse(res);
-
-        if (!res.ok) {
-          throw new Error(data.error || data.status || "Status check failed");
-        }
+        if (!res.ok) throw new Error(data.error || data.status || "Status check failed");
 
         const status = (data.status || "").toLowerCase();
         if (status === "completed") {
           setInferenceProgress(100);
           setIsInferencing(false);
           setInferenceCompleted(true);
+          setRecentUploads(updateRecentUploadStatus(sid, "Completed"));
           stopInferencePolling();
+
+          setTimeout(() => {
+            if (model === "OpenVAE") {
+              navigate(`/reconstruction/${sid}`);
+            } else {
+              navigate(`/session/${sid}`);
+            }
+          }, 600);
           return;
         }
-
         if (status === "failed") {
           setIsInferencing(false);
+          setRecentUploads(updateRecentUploadStatus(sid, "Failed"));
           stopInferencePolling();
           setMessage(`Inference failed${data.error ? `: ${data.error}` : ""}`);
           return;
         }
-
         setInferenceProgress(prev => Math.min(95, Math.max(prev + 7, 10)));
       } catch (err) {
         setInferenceProgress(prev => Math.min(95, Math.max(prev + 3, 10)));
@@ -110,132 +188,130 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   };
 
   useEffect(() => {
-    return () => {
-      stopInferencePolling();
-    };
+    return () => { stopInferencePolling(); };
   }, []);
 
-  // Step 0: Upload files to server
-  const CHUNK_SIZE = 256 * 1024; // 256 KB per chunk
+  /* ── Upload (chunked) ── */
+  const CHUNK_SIZE = 256 * 1024;
 
-  const handleUploadClick = async () => {
-    if (selectedFiles.length === 0) return alert("No files selected!");
-
-    const file = selectedFiles[0];
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const sessionId = crypto.randomUUID(); // generate unique session ID
-
-    setIsUploading(true);
-    setUploadProgress(0);
-    setMessage(`Uploading ${file.name} in ${totalChunks} chunks...`);
-
-    try {
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-
-        const formData = new FormData();
-        formData.append("session_id", sessionId);
-        formData.append("chunk_index", i.toString());
-        formData.append("total_chunks", totalChunks.toString());
-        formData.append("file", chunk);
-
-        const res = await fetch(`${API_BASE}/api/upload-inference-chunk`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (res.status === 413) {
-          throw new Error("Upload chunk too large for server/proxy limit (HTTP 413). Please reduce proxy upload limit or keep smaller chunks.");
-        }
-
-        const data = await parseApiResponse(res);
-        if (!res.ok) throw new Error(data.error || "Chunk upload failed");
-        setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
-      }
-
-      setMessage("All chunks uploaded, combining...");
-
-      // Combine chunks on the backend
-      const finalizeRes = await fetch(`${API_BASE}/api/finalize-upload`, {
-        method: "POST",
-        body: new URLSearchParams({
-          session_id: sessionId,
-          total_chunks: totalChunks.toString(),
-          output_filename: file.name,
-          ...(bdmapId.trim() ? { bdmap_id: bdmapId.trim() } : {}),
-        }),
-      });
-
-      const finalizeData = await parseApiResponse(finalizeRes);
-      if (!finalizeRes.ok) throw new Error(finalizeData.error);
-
-      setSessionId(sessionId);
-      setUploadedFilename(finalizeData.uploaded_filename || file.name);
-      setServerPath(finalizeData.path || "");
-      setUploadProgress(100);
-      setMessage(`Upload complete! File ready at ${finalizeData.path}${finalizeData.bdmap_id ? ` (Case: ${finalizeData.bdmap_id})` : ""}`);
-    } catch (err) {
-      console.error(err);
-      setMessage("Upload failed: " + (err as Error).message);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
+  /* ── Run inference ── */
   const handleRunEpaiInference = async () => {
-    if (!sessionId && !serverPath && selectedFiles.length === 0) {
+    if (!sessionId && !serverPath.trim() && selectedFiles.length === 0) {
       alert("Provide a server file path or upload/select a file first.");
       return;
     }
 
-    setMessage(`Starting ${selectedModel} inference...`);
-    setInferenceProgress(0);
-    setIsInferencing(true);
-
-    if (!sessionId && !serverPath.trim()) {
-      alert("Please upload a file first before running inference.");
-      setIsInferencing(false);
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("session_id", sessionId || crypto.randomUUID());
-    formData.append("model_name", selectedModel);
-
-    if (serverPath.trim()) {
-      formData.append("INPUT_SERVER_PATH", serverPath.trim());
-    } else if (uploadedFilename) {
-      formData.append("uploaded_filename", uploadedFilename);
-    }
+    let currentSessionId = sessionId;
+    let currentUploadedFilename = uploadedFilename;
 
     try {
+      // If files selected but not yet uploaded, upload first
+      if (!currentSessionId && !serverPath.trim() && selectedFiles.length > 0) {
+        const file = selectedFiles[0];
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const newSessionId = crypto.randomUUID();
+
+        setIsUploading(true);
+        setUploadProgress(0);
+        setMessage(`Uploading ${file.name}...`);
+
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          const formData = new FormData();
+          formData.append("session_id", newSessionId);
+          formData.append("chunk_index", i.toString());
+          formData.append("total_chunks", totalChunks.toString());
+          formData.append("file", chunk);
+
+          const res = await fetch(`${API_BASE}/api/upload-inference-chunk`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (res.status === 413) {
+            throw new Error("Upload chunk too large for server/proxy limit (HTTP 413).");
+          }
+
+          const data = await parseApiResponse(res);
+          if (!res.ok) throw new Error(data.error || "Chunk upload failed");
+          setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+        }
+
+        setMessage("Finalizing upload...");
+
+        const finalizeRes = await fetch(`${API_BASE}/api/finalize-upload`, {
+          method: "POST",
+          body: new URLSearchParams({
+            session_id: newSessionId,
+            total_chunks: totalChunks.toString(),
+            output_filename: file.name,
+            ...(bdmapId.trim() ? { bdmap_id: bdmapId.trim() } : {}),
+          }),
+        });
+
+        const finalizeData = await parseApiResponse(finalizeRes);
+        if (!finalizeRes.ok) throw new Error(finalizeData.error);
+
+        currentSessionId = newSessionId;
+        currentUploadedFilename = finalizeData.uploaded_filename || file.name;
+        
+        setSessionId(currentSessionId);
+        setUploadedFilename(currentUploadedFilename);
+        setServerPath(finalizeData.path || "");
+        setUploadProgress(100);
+        setIsUploading(false);
+      }
+
+      setMessage(`Starting ${selectedModel} inference...`);
+      setInferenceProgress(0);
+      setIsInferencing(true);
+
+      const formData = new FormData();
+      formData.append("session_id", currentSessionId || crypto.randomUUID());
+      formData.append("model_name", selectedModel);
+
+      if (serverPath.trim()) {
+        formData.append("INPUT_SERVER_PATH", serverPath.trim());
+      } else if (currentUploadedFilename) {
+        formData.append("uploaded_filename", currentUploadedFilename);
+      }
+
       const res = await fetch(`${API_BASE}/api/run-epai-inference`, {
         method: "POST",
         body: formData,
       });
       const data = await parseApiResponse(res);
-      if (!res.ok) throw new Error(data.error || "Failed to start ePAI inference");
+      if (!res.ok) throw new Error(data.error || "Failed to start inference");
 
       const sid = data.session_id || formData.get("session_id")?.toString() || "";
       setSessionId(sid);
       setMessage(`${selectedModel} inference started. Session: ${sid}`);
       if (sid) {
-        startInferencePolling(sid);
+        setRecentUploads(
+          addRecentUpload({
+            sessionId: sid,
+            label: bdmapId.trim() || currentUploadedFilename || selectedFiles[0]?.name || sid,
+            model: selectedModel,
+            status: "Processing",
+            timestamp: Date.now(),
+            isReconstruction: selectedModel === "OpenVAE",
+          })
+        );
+        startInferencePolling(sid, selectedModel);
       }
     } catch (err) {
       console.error(err);
+      setIsUploading(false);
       setIsInferencing(false);
-      setMessage("Failed to start inference: " + (err as Error).message);
+      setMessage("Failed: " + (err as Error).message);
     }
   };
 
   const handleCheckStatus = async () => {
-    if (!sessionId) {
-      setMessage("No session id yet.");
-      return;
-    }
+    if (!sessionId) { setMessage("No session id yet."); return; }
     try {
       const res = await fetch(`${API_BASE}/api/inference-status/${sessionId}`);
       const data = await parseApiResponse(res);
@@ -246,11 +322,10 @@ const UploadPage: React.FC<UploadPageProps> = () => {
         setInferenceProgress(100);
         setIsInferencing(false);
         setInferenceCompleted(true);
+        setRecentUploads(updateRecentUploadStatus(sessionId, "Completed"));
         stopInferencePolling();
       } else if (status === "running") {
-        if (!isInferencing) {
-          startInferencePolling(sessionId);
-        }
+        if (!isInferencing) startInferencePolling(sessionId, selectedModel);
       }
     } catch (err) {
       console.error(err);
@@ -259,13 +334,8 @@ const UploadPage: React.FC<UploadPageProps> = () => {
   };
 
   const handleDownloadResult = async () => {
-    if (!sessionId) {
-      setMessage("No session id yet.");
-      return;
-    }
-
+    if (!sessionId) { setMessage("No session id yet."); return; }
     setMessage("Preparing download...");
-
     try {
       const statusRes = await fetch(`${API_BASE}/api/inference-status/${sessionId}`);
       const statusData = await parseApiResponse(statusRes);
@@ -274,7 +344,6 @@ const UploadPage: React.FC<UploadPageProps> = () => {
         setMessage(`Status: ${statusData.status || "unknown"}. Please wait until completed.`);
         return;
       }
-
       setInferenceProgress(100);
       setIsInferencing(false);
       stopInferencePolling();
@@ -284,7 +353,6 @@ const UploadPage: React.FC<UploadPageProps> = () => {
         const maybeJson = await parseApiResponse(resultRes);
         throw new Error(maybeJson?.error || "Failed to download result zip");
       }
-
       const blob = await resultRes.blob();
       const objectUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -294,7 +362,6 @@ const UploadPage: React.FC<UploadPageProps> = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(objectUrl);
-
       setMessage("Download started: zip includes combined_labels.nii.gz and output.csv");
     } catch (err) {
       console.error(err);
@@ -329,216 +396,322 @@ const UploadPage: React.FC<UploadPageProps> = () => {
       setSessionId(sid);
       setSelectedModel("ePAI" as const);
       setMessage(`ePAI inference started on reconstructed CT. Session: ${sid}`);
-      if (sid) {
-        startInferencePolling(sid);
-      }
+      if (sid) startInferencePolling(sid, "ePAI");
     } catch (err) {
       console.error(err);
       setMessage("Failed to start ePAI on reconstruction: " + (err as Error).message);
     }
   };
 
-  // // Step 1: Run inference
-  // const handleRunInference = async () => {
-  //   setMessage("Running inference...");
-  //   try {
-  //     const res = await fetch("/run-inference", { method: "POST" });
-  //     const data = await res.json();
-  //     if (res.ok) {
-  //       setMessage(data.status || "Inference started");
-  //       setInferenceStarted(true);
-  //       setZipFilename(null);
-  //     } else {
-  //       setMessage(data.error || "Inference failed");
-  //     }
-  //   } catch (err) {
-  //     console.error(err);
-  //     setMessage("Inference failed: network error");
-  //   }
-  // };
-
-  // // Step 2: Prepare zip download
-  // const handlePrepareDownload = async () => {
-  //   if (!inferenceStarted) {
-  //     setMessage("Run inference first");
-  //     return;
-  //   }
-
-  //   setMessage("Preparing output zip...");
-  //   try {
-  //     const res = await fetch("/prepare-download", { method: "POST" });
-  //     const data = await res.json();
-
-  //     if (res.ok && data.filename) {
-  //       setZipFilename(data.filename);
-  //       setMessage(`Output prepared: ${data.filename}. Ready to download.`);
-  //     } else {
-  //       setMessage("Failed to prepare output zip");
-  //       console.error(data);
-  //     }
-  //   } catch (err) {
-  //     console.error(err);
-  //     setMessage("Error preparing download");
-  //   }
-  // };
-
-  // // Step 3: Download zip
-  // const handleDownload = async () => {
-  //   if (!zipFilename) {
-  //     setMessage("No prepared file available. Prepare download first.");
-  //     return;
-  //   }
-
-  //   try {
-  //     const res = await fetch(`/download-prepared-output?filename=${zipFilename}`);
-  //     const data = await res.json();
-
-  //     if (res.ok && data.url) {
-  //       const link = document.createElement("a");
-  //       link.href = data.url;
-  //       link.download = data.filename || zipFilename;
-  //       document.body.appendChild(link);
-  //       link.click();
-  //       document.body.removeChild(link);
-  //       setMessage(`Download started: ${data.filename || zipFilename}`);
-  //     } else {
-  //       setMessage("Download failed");
-  //       console.error(data);
-  //     }
-  //   } catch (err) {
-  //     console.error(err);
-  //     setMessage("Download failed");
-  //   }
-  // };
-
+  /* ── Render ── */
   return (
-    <div className="upload-page">
+    <div className="upload-page-wrapper">
+      {/* Ambient glow */}
+      <div className="ambient-orbs">
+        <div className="orb orb-1" />
+        <div className="orb orb-2" />
+      </div>
 
-      {/* Selected files */}
-      <div className="file-tags">
-        {selectedFiles.map((file, index) => (
-          <div key={index} className="file-tag">
-            {file.name}
-            <span className="remove-tag" onClick={() => removeFile(index)}>×</span>
+      <Header />
+
+      <div className="upload-main">
+        <div className="upload-card">
+          <div className="upload-card-label">Upload</div>
+
+          {/* ── Drop zone ── */}
+          <div
+            className={`dropzone${isDragOver ? ' drag-over' : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".nii,.gz"
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+            <svg className="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <div className="dropzone-text">Click or drag to upload</div>
+            <div className="dropzone-sub">.nii or .nii.gz</div>
           </div>
-        ))}
-      </div>
 
-      {/* Upload / input bar */}
-      <div className="upload-bar">
-        <button className="plus-button" onClick={handlePlusClick}>
-          <IconPlus />
-        </button>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".nii,.gz"
-          style={{ display: 'none' }}
-          onChange={handleFileSelect}
-        />
-
-        <input
-          type="text"
-          readOnly
-          placeholder="Click + to select .nii or .nii.gz files"
-          className="upload-input"
-          onClick={handlePlusClick}
-          value={selectedFiles.map(f => f.name).join(', ')}
-        />
-
-        <button className="upload-button" onClick={handleUploadClick}>
-          <IconArrowUp />
-        </button>
-      </div>
-
-      <div className="upload-bar" style={{ marginTop: "0.75rem" }}>
-        <input
-          type="text"
-          className="upload-input"
-          placeholder="Or input server CT path: /path/to/xxx.nii.gz"
-          value={serverPath}
-          onChange={(e) => setServerPath(e.target.value)}
-        />
-      </div>
-
-      <div className="upload-bar" style={{ marginTop: "0.75rem" }}>
-        <input
-          type="text"
-          className="upload-input"
-          placeholder="Optional BDMAP ID (e.g. BDMAP_00000338 or 00000338)"
-          value={bdmapId}
-          onChange={(e) => setBdmapId(e.target.value)}
-        />
-      </div>
-
-      <div className="upload-actions">
-        <select
-          className="model-select"
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value as "ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "")}
-        >
-          <option value="" disabled>Select a model</option>
-          <option value="ePAI">ePAI</option>
-          <option value="SuPreM">SuPreM</option>
-          <option value="MedFormer">MedFormer</option>
-          <option value="R-Super">R-Super</option>
-          <option value="OpenVAE">OpenVAE</option>
-          <option value="Atlas-Net">Atlas-Net</option>
-        </select>
-        <button className="upload-button" onClick={handleRunEpaiInference} disabled={!selectedModel}>Run</button>
-        <button className="upload-button" onClick={handleCheckStatus}>Check Status</button>
-        <button className="upload-button" onClick={handleDownloadResult}>Download</button>
-      </div>
-
-      {(isUploading || uploadProgress > 0) && (
-        <div className="progress-wrap">
-          <p className="upload-meta">Upload Progress: {uploadProgress}%</p>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${uploadProgress}%` }} />
-          </div>
-        </div>
-      )}
-
-      {(isInferencing || inferenceProgress > 0) && (
-        <div className="progress-wrap">
-          <p className="upload-meta">Inference Progress: {inferenceProgress}%</p>
-          <div className="progress-track">
-            <div className="progress-fill progress-fill-inference" style={{ width: `${inferenceProgress}%` }} />
-          </div>
-        </div>
-      )}
-
-      {inferenceCompleted && sessionId && (
-        <div className="result-actions">
-          {selectedModel === "OpenVAE" ? (
-            <>
-              <button className="upload-button result-button" onClick={() => navigate(`/reconstruction/${sessionId}`)}>
-                View Reconstruction
-              </button>
-              <button className="upload-button result-button" onClick={handleRunEpaiOnReconstruction}>
-                Run ePAI on Result
-              </button>
-              <button className="upload-button result-button" onClick={handleDownloadResult}>
-                Download
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="upload-button result-button" onClick={() => navigate(`/session/${sessionId}`)}>
-                View Visualization
-              </button>
-              <button className="upload-button result-button" onClick={handleDownloadResult}>
-                Download Results
-              </button>
-            </>
+          {/* ── File chips ── */}
+          {selectedFiles.length > 0 && (
+            <div className="file-chips">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="file-chip">
+                  {file.name}
+                  <button className="file-chip-remove" onClick={() => removeFile(index)}>×</button>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
-      )}
 
-      {sessionId && <p className="upload-meta">Session: {sessionId}</p>}
-      {message && <p className="upload-meta">{message}</p>}
+          {/* ── Pipeline row ── */}
+          <div className="pipeline-row">
+            {/* Step 1: Preprocessing */}
+            <div className="pipeline-step">
+              <div className="pipeline-step-header">
+                <div className="pipeline-badge">1</div>
+                <span className="pipeline-label">Preprocessing</span>
+                <span className="pipeline-optional">optional</span>
+              </div>
+              <select className="pipeline-select" defaultValue="">
+                <option value="">None (skip)</option>
+                <option value="OpenVAE">OpenVAE</option>
+              </select>
+            </div>
+
+            <div className="pipeline-arrow">→</div>
+
+            {/* Step 2: Model */}
+            <div className="pipeline-step">
+              <div className="pipeline-step-header">
+                <div className="pipeline-badge">2</div>
+                <span className="pipeline-label">Model</span>
+              </div>
+              <select
+                className={`pipeline-select${selectedModel ? ' has-value' : ''}`}
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value as typeof selectedModel)}
+              >
+                <option value="" disabled>Select a model</option>
+                <option value="ePAI">ePAI</option>
+                <option value="SuPreM">SuPreM</option>
+                <option value="MedFormer">MedFormer</option>
+                <option value="R-Super">R-Super</option>
+                <option value="Atlas-Net">Atlas-Net</option>
+              </select>
+            </div>
+
+            <div className="pipeline-arrow">→</div>
+
+            {/* Step 3: Postprocessing */}
+            <div className="pipeline-step">
+              <div className="pipeline-step-header">
+                <div className="pipeline-badge">3</div>
+                <span className="pipeline-label">Postprocessing</span>
+                <span className="pipeline-optional">optional</span>
+              </div>
+              <select className="pipeline-select" defaultValue="">
+                <option value="">None (skip)</option>
+                <option value="ShapeKit">ShapeKit</option>
+              </select>
+            </div>
+
+            <button
+              className="run-btn"
+              onClick={handleRunEpaiInference}
+              disabled={!selectedModel}
+            >
+              Run
+            </button>
+          </div>
+
+          {/* ── Advanced options ── */}
+          <div className="advanced-section">
+            <button
+              className={`advanced-toggle${showAdvanced ? ' open' : ''}`}
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                <path d="M2 1l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Advanced Options
+            </button>
+            {showAdvanced && (
+              <div className="advanced-fields">
+                <input
+                  type="text"
+                  className="advanced-input"
+                  placeholder="Server CT path: /path/to/xxx.nii.gz"
+                  value={serverPath}
+                  onChange={(e) => setServerPath(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="advanced-input"
+                  placeholder="Optional BDMAP ID (e.g. BDMAP_00000338)"
+                  value={bdmapId}
+                  onChange={(e) => setBdmapId(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* ── Action bar ── */}
+          {sessionId && (
+            <div className="action-bar">
+              <button className="action-btn" onClick={handleCheckStatus}>Check Status</button>
+              <button className="action-btn" onClick={handleDownloadResult}>Download</button>
+            </div>
+          )}
+
+          {/* ── Progress ── */}
+          {(isUploading || uploadProgress > 0) && (
+            <div className="progress-section">
+              <div className="progress-item">
+                <div className="progress-label">
+                  <span className="progress-label-text">Upload Progress</span>
+                  <span className="progress-label-pct">{uploadProgress}%</span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill progress-fill-upload" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(isInferencing || inferenceProgress > 0) && (
+            <div className="progress-section">
+              <div className="progress-item">
+                <div className="progress-label">
+                  <span className="progress-label-text">Inference Progress</span>
+                  <span className="progress-label-pct">{inferenceProgress}%</span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill progress-fill-inference" style={{ width: `${inferenceProgress}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Results ── */}
+          {inferenceCompleted && sessionId && (
+            <div className="result-section">
+              <div className="result-title">✓ Inference Complete</div>
+              <div className="result-btns">
+                {selectedModel === "OpenVAE" ? (
+                  <>
+                    <button className="result-btn" onClick={() => navigate(`/reconstruction/${sessionId}`)}>
+                      View Reconstruction
+                    </button>
+                    <button className="result-btn" onClick={handleRunEpaiOnReconstruction}>
+                      Run ePAI on Result
+                    </button>
+                    <button className="result-btn" onClick={handleDownloadResult}>
+                      Download
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="result-btn result-btn-primary" onClick={() => navigate(`/session/${sessionId}`)}>
+                      View Visualization
+                    </button>
+                    <button className="result-btn" onClick={handleDownloadResult}>
+                      Download Results
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Status messages ── */}
+          {sessionId && !inferenceCompleted && (
+            <div className="status-msg status-msg-session">Session: {sessionId}</div>
+          )}
+          {message && <div className="status-msg">{message}</div>}
+        </div>
+
+        {/* ── Recent Uploads ── */}
+        <div style={{ marginTop: "32px" }}>
+          <div style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: "11px",
+            fontWeight: 600,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "#8f8f8f",
+            marginBottom: "16px",
+            paddingLeft: "4px"
+          }}>
+            Recent Uploads
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {recentUploads.length === 0 ? (
+              <div style={{
+                background: "#f5f5f5",
+                border: "1px dashed rgba(0,0,0,0.12)",
+                borderRadius: "12px",
+                padding: "24px 20px",
+                textAlign: "center",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "12px",
+                color: "#8f8f8f"
+              }}>
+                No uploads yet — run a model above and your results will appear here.
+              </div>
+            ) : (
+              recentUploads.map((upload) => {
+                const openSession = () => {
+                  if (upload.status === "Failed") return;
+                  navigate(`/${upload.isReconstruction ? "reconstruction" : "session"}/${upload.sessionId}`);
+                };
+                const clickable = upload.status !== "Failed";
+                return (
+                  <div key={upload.sessionId} onClick={openSession} style={{
+                    background: "#f5f5f5",
+                    border: "1px solid rgba(0,0,0,0.06)",
+                    borderRadius: "12px",
+                    padding: "16px 20px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    cursor: clickable ? "pointer" : "default"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                      <div style={{
+                        width: "36px", height: "36px", borderRadius: "8px",
+                        background: "rgba(0,0,0,0.06)", border: "1px solid rgba(0,0,0,0.12)",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                      }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                          <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "14px", fontWeight: 600, color: "#111111" }}>
+                          {upload.label}
+                        </div>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: "#6a6a6a", marginTop: "2px" }}>
+                          {upload.model ? `${upload.model} · ` : ""}{formatRelativeTime(upload.timestamp)}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "12px", fontWeight: 500, color: recentStatusColor(upload.status) }}>
+                        {upload.status}
+                      </span>
+                      {clickable && (
+                        <button onClick={(e) => { e.stopPropagation(); openSession(); }} style={{
+                          background: "transparent", border: "1px solid rgba(0,0,0,0.1)",
+                          borderRadius: "6px", padding: "6px 12px", color: "#111111",
+                          fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px", cursor: "pointer"
+                        }}>
+                          View
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

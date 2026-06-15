@@ -3,6 +3,7 @@ import "./App.css";
 import { default as RotatingHeartLoader } from "./components/Loading";
 import { AnnotationProvider } from "./contexts/annotationContexts";
 import { FileProvider } from "./contexts/fileContexts";
+import LandingPage from "./pages/LandingPage";
 import Homepage from "./routes/Homepage";
 import UploadPage from "./routes/UploadPage";
 import VisualizationPage from "./routes/VisualizationPage";
@@ -17,7 +18,8 @@ function App() {
 				<div className="App">
 					<BrowserRouter basename={BASENAME}>
 						<Routes>
-							<Route path="/" element={<Homepage />} />
+							<Route path="/" element={<LandingPage />} />
+							<Route path="/dashboard" element={<Homepage />} />
 							{/* <Route path="/data" element={<DataPage />} /> */}
 							{/* <Route path="/:type/:page" element={<Homepage />} /> */}
 							<Route path="/case/:caseId" element={<VisualizationPage />} />

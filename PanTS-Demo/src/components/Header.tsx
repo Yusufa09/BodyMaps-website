@@ -1,48 +1,85 @@
-import { useNavigate } from "react-router-dom";
+import { IconBrandGithub } from "@tabler/icons-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import styles from "../pages/LandingPage.module.css";
 
-type Props = {
-    handleAboutClick: () => void
-}
-export default function Header({handleAboutClick}: Props)  {
-    const navigate = useNavigate();
-    return(
-        <header className="flex items-center pl-8 justify-start gap-20 w-screen p-4 bg-black relative">
-				<div className="text-4xl cursor-pointer" onClick={() => navigate("/")}>PanTS Data</div>
-				<div className="flex items-center gap-8 justify-center">
-					{/* <div className="text-lg cursor-pointer group relative">
-						Browse Full Catalog
-						<div className="scale-0 flex flex-col rounded gap-2 p-2 w-full transition-all bg-gray-800 absolute top-8 origin-top group-hover:scale-100 duration-100">
-							<div
-								className="cursor-pointer hover:bg-gray-700 rounded p-0.5 text-base"
-								// onClick={() => navigate("/data")}
-							>
-								Train
-							</div>
-							<div
-								className="cursor-pointer hover:bg-gray-700 rounded p-0.5 text-base"
-								onClick={() =>
-									navigate(`/`)
-								}
-							>
-								Test
-							</div>
-						</div>
-					</div> */}
-					<div
-						className="text-lg cursor-pointer"
-						onClick={() =>
-							(window.location.href = "https://github.com/MrGiovanni/PanTS")
-						}
-					>
-						Github
-					</div>
-					<div
-						className="text-lg cursor-pointer"
-						onClick={() => handleAboutClick()}
-					>
-						About
-					</div>
+const TABS = [
+	{ id: "overview", label: "Overview", path: "/" },
+	{ id: "dataset", label: "Dataset", path: "/dashboard" },
+	{ id: "upload", label: "Upload", path: "/upload" },
+] as const;
+
+export default function Header() {
+	const navigate = useNavigate();
+	const location = useLocation();
+
+	const activeTab = TABS.find((t) => t.path === location.pathname)?.id ?? "overview";
+
+	const tabClass = (name: string) =>
+		`${styles.tabPill} ${activeTab === name ? styles.tabPillActive : ""}`;
+
+	return (
+		<nav
+			className={styles.nav}
+			style={{
+				position: "sticky",
+				top: 0,
+				zIndex: 50,
+				fontFamily: "'Space Grotesk', sans-serif",
+			}}
+		>
+			{/* Logo */}
+			<div className={styles.logoPill} onClick={() => navigate("/dashboard")}>
+				<div className={styles.logoIcon}>
+					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111111" strokeWidth="2">
+						<circle cx="12" cy="12" r="10" />
+						<circle cx="12" cy="12" r="4" />
+						<line x1="12" y1="2" x2="12" y2="4" />
+						<line x1="12" y1="20" x2="12" y2="22" />
+						<line x1="2" y1="12" x2="4" y2="12" />
+						<line x1="20" y1="12" x2="22" y2="12" />
+					</svg>
 				</div>
-			</header>
-)
+				<div>
+					<div className={styles.logoTitle}>BodyMaps</div>
+					<div className={styles.logoSubtitle}>CT Segmentation Platform</div>
+				</div>
+			</div>
+
+			{/* Center Tabs */}
+			<div className={styles.tabBar}>
+				{TABS.map((tab) => (
+					<button
+						key={tab.id}
+						type="button"
+						className={tabClass(tab.id)}
+						onClick={() => navigate(tab.path)}
+					>
+						{tab.label.toUpperCase()}
+					</button>
+				))}
+			</div>
+
+			{/* Right Side (Github Link) */}
+			<div style={{ width: "235px", display: "flex", justifyContent: "flex-end" }}>
+				<a
+					href="https://github.com/BodyMaps/BodyMaps-website"
+					target="_blank"
+					rel="noreferrer"
+					className="flex items-center gap-1.5 rounded-md px-3 py-2 transition-colors"
+					style={{ fontSize: "12px", color: "#6a6a6a" }}
+					onMouseEnter={(e) => {
+						(e.currentTarget as HTMLElement).style.color = "#111111";
+						(e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,.05)";
+					}}
+					onMouseLeave={(e) => {
+						(e.currentTarget as HTMLElement).style.color = "#6a6a6a";
+						(e.currentTarget as HTMLElement).style.background = "transparent";
+					}}
+				>
+					<IconBrandGithub size={18} />
+					GitHub
+				</a>
+			</div>
+		</nav>
+	);
 }

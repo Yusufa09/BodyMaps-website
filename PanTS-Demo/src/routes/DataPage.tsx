@@ -55,9 +55,6 @@ export default function DataPage() {
 	}, [PREVIEW_IDS]);
 
 	const aboutRef = useRef<HTMLDivElement>(null);
-	const handleAboutClick = () => {
-		aboutRef.current?.scrollIntoView({ behavior: "smooth" });
-	};
 
 	const handleSubmit = () => {
     if (pageUser && !Number.isNaN(Number(pageUser)) && Number(pageUser) > 0) {
@@ -83,7 +80,7 @@ export default function DataPage() {
 
 	return (
 		<div className="flex gap-10 flex-col text-white relative min-h-screen">
-			<Header handleAboutClick={handleAboutClick} />
+			<Header />
 			<div className="flex gap-2 items-center justify-center">
 			<IconChevronLeft className="cursor-pointer" onClick={() => window.location.href = `/data?pg=${page - 1}`}/>
             <div className="text-2xl text-center font-bold">

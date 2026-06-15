@@ -53,7 +53,7 @@
 
 /* Toggled state */
 .toggle-switch input:checked+.slider {
-    background-color: #4caf50;
+    background-color: #6e7681;
 }
 
 .toggle-switch input:checked+.slider::before {
@@ -101,7 +101,7 @@
 
 /* Toggled state */
 .toggle-switch input:checked+.slider {
-    background-color: #4caf50;
+    background-color: #6e7681;
 }
 
 .toggle-switch input:checked+.slider::before {
@@ -114,6 +114,47 @@
   max-width: 100vw;
   overflow-x: hidden;
   min-height:100vh;
+}
+
+/* ── BodyMaps design system ───────────────────────────── */
+
+.bm-glass {
+  background: rgba(0, 0, 0, 0.022);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.bm-card {
+  background: rgba(0, 0, 0, 0.022);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+
+.bm-card:hover {
+  border-color: rgba(0, 0, 0, 0.22);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06),
+              0 8px 32px rgba(0, 0, 0, 0.06),
+              0 2px 8px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+@keyframes bm-shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+.bm-card-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.02) 0px,
+    rgba(0, 0, 0, 0.05) 200px,
+    rgba(0, 0, 0, 0.02) 400px
+  );
+  background-size: 600px 100%;
+  animation: bm-shimmer 1.8s infinite linear;
 }
 .logo {
   height: 6em;
