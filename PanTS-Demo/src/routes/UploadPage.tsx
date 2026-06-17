@@ -2,6 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './UploadPage.css';
 import { API_BASE } from '../helpers/constants';
+import {
+  addRecentUpload,
+  formatRelativeTime,
+  loadRecentUploads,
+  recentStatusColor,
+  updateRecentUploadStatus,
+  type RecentUpload,
+} from '../helpers/recentUploads';
 import Header from '../components/Header';
 
 const parseApiResponse = async (res: Response): Promise<any> => {
@@ -15,63 +23,6 @@ const parseApiResponse = async (res: Response): Promise<any> => {
     `Expected JSON but got ${contentType || "unknown content-type"} (HTTP ${res.status}). Body: ${shortBody}`
   );
 };
-
-/* ── Recent uploads (persisted in the user's localStorage, like JHU's recentIds) ── */
-type RecentUploadStatus = "Processing" | "Completed" | "Failed";
-type RecentUpload = {
-  sessionId: string;
-  label: string;
-  model: string;
-  status: RecentUploadStatus;
-  timestamp: number;
-  isReconstruction?: boolean;
-};
-
-const RECENT_UPLOADS_KEY = "recentUploads";
-const MAX_RECENT_UPLOADS = 8;
-
-const loadRecentUploads = (): RecentUpload[] => {
-  try {
-    const arr = JSON.parse(localStorage.getItem(RECENT_UPLOADS_KEY) || "[]");
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-};
-
-const persistRecentUploads = (list: RecentUpload[]) => {
-  try {
-    localStorage.setItem(RECENT_UPLOADS_KEY, JSON.stringify(list.slice(0, MAX_RECENT_UPLOADS)));
-  } catch (e) {
-    console.warn("saveRecentUploads failed", e);
-  }
-};
-
-const addRecentUpload = (entry: RecentUpload): RecentUpload[] => {
-  const list = [entry, ...loadRecentUploads().filter((u) => u.sessionId !== entry.sessionId)];
-  const trimmed = list.slice(0, MAX_RECENT_UPLOADS);
-  persistRecentUploads(trimmed);
-  return trimmed;
-};
-
-const updateRecentUploadStatus = (sessionId: string, status: RecentUploadStatus): RecentUpload[] => {
-  const list = loadRecentUploads().map((u) => (u.sessionId === sessionId ? { ...u, status } : u));
-  persistRecentUploads(list);
-  return list;
-};
-
-const formatRelativeTime = (ts: number): string => {
-  const mins = Math.floor((Date.now() - ts) / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? "Yesterday" : `${days} days ago`;
-};
-
-const recentStatusColor = (status: RecentUploadStatus): string =>
-  status === "Failed" ? "#ef4444" : status === "Processing" ? "#6a6a6a" : "#8f8f8f";
 
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
