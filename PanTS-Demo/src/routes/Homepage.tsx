@@ -13,6 +13,13 @@ import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import Preview from "../components/Preview";
 import { API_BASE } from "../helpers/constants";
+import {
+	buildSearchParams,
+	itemToId,
+	type SearchFilters as Filters,
+	type SearchItem,
+	type TumorFilter,
+} from "../helpers/search";
 import type { PreviewType } from "../types";
 
 // Number of cards shown on the dashboard (and skeleton placeholders).
@@ -24,14 +31,6 @@ const STATS = [
 	{ label: "Annotated Structures", value: "993K+", icon: IconStack2 },
 	{ label: "Organ Classes", value: "25", icon: IconAtom },
 ];
-
-type TumorFilter = "any" | "tumor" | "no_tumor";
-
-type Filters = {
-	tumor: TumorFilter;
-	sex: string[];
-	age: string[];
-};
 
 const DEFAULT_FILTERS: Filters = { tumor: "any", sex: [], age: [] };
 
@@ -61,22 +60,6 @@ const AGE_OPTIONS = [
 	{ value: "90-99", label: "90-99" },
 	{ value: "UNKNOWN", label: "Unknown" },
 ];
-
-// Minimal shape of an item returned by /api/search and /api/random.
-type SearchItem = {
-	case_id?: string | number;
-	"PanTS ID"?: string | number;
-	id?: string | number;
-	tumor?: number | null;
-	sex?: string | null;
-	age?: number | string | null;
-};
-
-const itemToId = (it: SearchItem): number => {
-	const raw = String(it.case_id ?? it["PanTS ID"] ?? it.id ?? "");
-	const m = raw.match(/\d+/);
-	return m ? Number(m[0]) : 0;
-};
 
 const pillStyle = (active: boolean): React.CSSProperties => ({
 	padding: "7px 16px",
@@ -210,13 +193,7 @@ export default function Homepage() {
 		setLoading(true);
 		setPreviewMetadata({});
 		try {
-			const params = new URLSearchParams();
-			filters.sex.forEach((v) => params.append("sex[]", v));
-			if (filters.tumor === "tumor") params.set("tumor", "1");
-			else if (filters.tumor === "no_tumor") params.set("tumor", "0");
-			filters.age.forEach((v) => params.append("age_bin[]", v));
-			params.set("sort_by", "quality");
-			params.set("per_page", "12");
+			const params = buildSearchParams(filters, { sortBy: "quality", perPage: 12 });
 			const res = await fetch(`${API_BASE}/api/search?${params.toString()}`);
 			const data = await res.json();
 			setResultCount(data.total ?? 0);
