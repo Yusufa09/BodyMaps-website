@@ -9,6 +9,7 @@ import {
 import React, { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useParams } from "react-router-dom";
 import RotatingModelLoader from "../components/Loading";
+import { SegmentationMeshViewer } from "../components/MeshViewer";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
@@ -17,14 +18,12 @@ import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
     getOrganLabelOnClick,
-    moveCornerstoneCrosshairToMm,
     renderVisualization,
     setToolGroupOpacity,
     setVisibilities,
-    subscribeToCrosshairChanges,
     toggleCrosshairTool
 } from "../helpers/CornerstoneNifti2";
-import { create3DVolume, moveNiiVueCrosshairToMm, updateVisibilities } from "../helpers/NiiVueNifti";
+import { updateVisibilities } from "../helpers/NiiVueNifti";
 import {
     API_BASE,
     APP_CONSTANTS,
@@ -144,10 +143,13 @@ function VisualizationPage() {
 				!axial_ref.current ||
 				!sagittal_ref.current ||
 				!coronal_ref.current ||
-				!render_ref.current ||
+				// !render_ref.current ||
 				cmap.length === 0
 			)
-				return;
+				{
+					console.log("return", cmap.length);
+					return;
+				}
 
 			const result = await renderVisualization(
 				axial_ref.current,
@@ -159,7 +161,7 @@ function VisualizationPage() {
 				setLoading
 			);
 
-			// setLoading(false);
+			setLoading(false);
 			if (!result) return;
 			const {
 				renderingEngine,
@@ -170,19 +172,19 @@ function VisualizationPage() {
 			setRenderingEngine(renderingEngine);
 			setViewportIds(viewportIds);
 			setVolumeId(volumeId);
-			const { nv, cmapCopy } = await create3DVolume(
-				render_ref,
-				segUrl,
-				labelColorMap,
-				(mm) => moveCornerstoneCrosshairToMm(mm as [number, number, number])
-			);
-			cmapRef.current = cmapCopy;
-			setNV(nv);
+			// const { nv, cmapCopy } = await create3DVolume(
+			// 	render_ref,
+			// 	segUrl,
+			// 	labelColorMap,
+			// 	(mm) => moveCornerstoneCrosshairToMm(mm as [number, number, number])
+			// );
+			// cmapRef.current = cmapCopy;
+			// setNV(nv);
 
-			// Cornerstone → NiiVue: when crosshair moves in any 2D view, sync to 3D
-			subscribeToCrosshairChanges((mm) => {
-				moveNiiVueCrosshairToMm(nv, mm);
-			});
+			// // Cornerstone → NiiVue: when crosshair moves in any 2D view, sync to 3D
+			// subscribeToCrosshairChanges((mm) => {
+			// 	moveNiiVueCrosshairToMm(nv, mm);
+			// });
 		};
 
 		setup();
@@ -602,31 +604,7 @@ function VisualizationPage() {
 
 					<div className={`render`} style={panelStyle("3d")}>
 						<div className="canvas">
-							<canvas
-								ref={render_ref}
-							// width={800} 
-							// height={800} 
-							// style={{ width: "100%", height: "100%" }}
-							>
-							</canvas>
-							{tooltip.visible && (
-								<div
-									style={{
-										position: "fixed",
-										top: tooltip.y,
-										left: tooltip.x,
-										background: "rgba(0,0,0,0.8)",
-										color: "white",
-										padding: "4px 8px",
-										borderRadius: "4px",
-										fontSize: "12px",
-										pointerEvents: "none",
-										zIndex: 9999,
-									}}
-								>
-									{tooltip.text}
-								</div>
-							)}
+							<SegmentationMeshViewer caseId={displayId} checkState={checkState} loading={loading}/>
 						</div>
 					</div>
 				</div>

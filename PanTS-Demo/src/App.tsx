@@ -5,6 +5,7 @@ import { AnnotationProvider } from "./contexts/annotationContexts";
 import { FileProvider } from "./contexts/fileContexts";
 import LandingPage from "./pages/LandingPage";
 import Homepage from "./routes/Homepage";
+import MeshViewer from "./routes/MeshViewer";
 import UploadPage from "./routes/UploadPage";
 import VisualizationPage from "./routes/VisualizationPage";
 
@@ -27,6 +28,7 @@ function App() {
 							<Route path="/reconstruction/:reconstructionId" element={<VisualizationPage />} />
 							<Route path="/test" element={<RotatingHeartLoader />} />
 							<Route path="/upload" element={<UploadPage />} />
+							<Route path="/mesh" element={<MeshViewer caseId="900" />} />
 						</Routes>
 					</BrowserRouter>
 				</div>
