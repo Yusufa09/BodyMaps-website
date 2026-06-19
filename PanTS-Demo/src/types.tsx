@@ -123,6 +123,22 @@ export type SegmentationCategories =
 	| "renal_vein_right"
 	| "cbd_stent";
 
+export type OrganMeshInfo = {
+  id: number;
+  key: string;
+  name: string;
+  color: string;
+  url: string;
+  vertices: number;
+  faces: number;
+};
+
+export type MeshManifest = {
+  caseId: string;
+  center: number[];
+  organs: OrganMeshInfo[];
+};
+
 export type LabelRequest = {
 	name: SegmentationCategories;
 	data: Blob;

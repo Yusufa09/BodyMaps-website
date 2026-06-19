@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from contextlib import contextmanager
-import fcntl
+import winfcntl as fcntl
 
 
 class InferenceJobQueue:
