@@ -29,7 +29,7 @@ const Model = ({ organ }: Props) => {
 const RotatingModelLoader: React.FC = () => {
 	const ref = React.useRef<HTMLCanvasElement>(null);
 	const containerRef = React.useRef<HTMLDivElement>(null);
-	const [organ, setOrgan] = useState<number>(Math.round(Math.random() * 4));
+	const [organ, setOrgan] = useState<number>(Math.floor(Math.random() * 4));
 	const organ_arr = ["pancreas", "kidney", "liver", "colon"];
 
 	useEffect(() => {

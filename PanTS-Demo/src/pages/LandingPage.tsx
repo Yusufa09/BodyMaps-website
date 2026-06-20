@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { segmentation_categories } from "../helpers/constants";
 import styles from "./LandingPage.module.css";
 
 /* ── counter targets ── */
-const TARGETS = { ctVol: 36390, medCenters: 145, structures: 993000, organClasses: 25 };
+// organClasses is derived from the viewer's actual label set (not hardcoded) so the
+// landing page can't drift out of sync with what the platform actually segments.
+const TARGETS = { ctVol: 36390, medCenters: 145, structures: 993000, organClasses: segmentation_categories.length };
 
 function formatStructures(v: number): string {
   if (v >= 993000) return "993K+";

@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './UploadPage.css';
+
+// Lazy so NiiVue isn't pulled into the upload bundle until a file is actually previewed.
+const CtPreview = lazy(() => import('../components/CtPreview/CtPreview'));
 import { API_BASE } from '../helpers/constants';
 import {
   addRecentUpload,
@@ -404,6 +407,16 @@ const UploadPage: React.FC = () => {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* ── Pre-inference preview: inspect the selected scan before running a model ── */}
+          {selectedFiles.length > 0 && !isUploading && !isInferencing && !inferenceCompleted && (
+            <>
+              <div className="ct-preview-label">Preview · {selectedFiles[0].name}</div>
+              <Suspense fallback={<div className="ct-preview ct-preview--msg">Loading preview…</div>}>
+                <CtPreview file={selectedFiles[0]} />
+              </Suspense>
+            </>
           )}
 
           {/* ── Pipeline row ── */}

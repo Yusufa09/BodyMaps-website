@@ -40,35 +40,33 @@ export default function OpacitySlider({
 
 
   return (
-    <div className="windowing-slider w-full flex flex-col gap-2 border-2 rounded-sm bg-gray-900 shadow-md">
-      <div className="bg-gray-600 w-full h-8 flex items-center justify-center text-center rounded-t-sm text-white">Label Settings</div>
-      <div className="pb-2 pl-4 pr-4 flex flex-col gap-2">
-
-        <div className="flex gap-1 flex-col justify-center items-center">
-          <div className="flex justify-between w-full items-center">
-            <div className="text-white">Label Opacity</div>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            aria-label="s"
-            className="w-full"
-            value={opacityValue}
-            onChange={handleOpacityOnSliderChange}
-          />
+    <div className="vp-panel">
+      <div className="vp-panel__title">Label Settings</div>
+      <div className="flex flex-col gap-2">
+        <div className="vp-row">
+          <span className="vp-label">Label Opacity</span>
+          <span className="vp-readout">{Math.round(opacityValue)}%</span>
         </div>
-        <button
-          className="text-white relative !p-1 text-2xs !bg-gray-700 hover:!border-white"
-          onClick={() => {
-            setShowOrganDetails((prev) => !prev);
-            setShowTaskDetails((prev) => !prev);
-          }}
-        >
-          Class Map
-        </button>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          aria-label="Label opacity"
+          className="vp-range"
+          value={opacityValue}
+          onChange={handleOpacityOnSliderChange}
+        />
       </div>
+      <button
+        className="vp-btn"
+        onClick={() => {
+          setShowOrganDetails((prev) => !prev);
+          setShowTaskDetails((prev) => !prev);
+        }}
+      >
+        Class Map
+      </button>
     </div>
   );
 }

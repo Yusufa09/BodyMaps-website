@@ -94,6 +94,24 @@ function getReferenceLineSlabThicknessControlsOn(viewportId: viewportIdTypes) {
         [viewportId1, viewportId2, viewportId3].indexOf(viewportId);
     return index !== -1;
 }
+// Subscribe to the nifti loader's real download progress (bytes loaded / total) so
+// the UI can show an accurate, measured ETA. Returns an unsubscribe fn.
+export function subscribeToVolumeProgress(
+	cb: (loaded: number, total: number, volumeId: string) => void
+): () => void {
+	const handler = (evt: Event) => {
+		const detail = (evt as CustomEvent).detail;
+		const data = detail?.data ?? detail;
+		if (data && typeof data.loaded === "number" && typeof data.total === "number") {
+			cb(data.loaded, data.total, String(data.volumeId ?? ""));
+		}
+	};
+	// Event name from @cornerstonejs/nifti-volume-loader (Events.NIFTI_VOLUME_PROGRESS).
+	eventTarget.addEventListener("CORNERSTONE_NIFTI_VOLUME_PROGRESS", handler as EventListener);
+	return () =>
+		eventTarget.removeEventListener("CORNERSTONE_NIFTI_VOLUME_PROGRESS", handler as EventListener);
+}
+
 export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, ctUrl: string, segUrl: string | undefined, setLoading: React.Dispatch<React.SetStateAction<boolean>>) {
     coreInit();
     niftiImageLoaderInit();

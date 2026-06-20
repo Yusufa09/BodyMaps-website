@@ -3,12 +3,13 @@ import type { Color, ColorLUT } from "@cornerstonejs/core/types";
 import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumeProperty';
 import { Niivue } from "@niivue/niivue";
 import {
+    IconChartBar,
     IconDownload, IconHome, IconPointer, IconReport,
     IconSettings
 } from "@tabler/icons-react";
-import React, { useEffect, useRef, useState, type MouseEvent } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useParams } from "react-router-dom";
-import RotatingModelLoader from "../components/Loading";
+import ErrorBoundary from "../components/ErrorBoundary";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
@@ -22,6 +23,7 @@ import {
     setToolGroupOpacity,
     setVisibilities,
     subscribeToCrosshairChanges,
+    subscribeToVolumeProgress,
     toggleCrosshairTool
 } from "../helpers/CornerstoneNifti2";
 import { create3DVolume, moveNiiVueCrosshairToMm, updateVisibilities } from "../helpers/NiiVueNifti";
@@ -37,6 +39,12 @@ import "./VisualizationPage.css";
 
 type ViewMode = "mpr" | "axial" | "sagittal" | "coronal" | "3d";
 
+type OrganStat = { organ_name: string; volume_cm3: number; mean_hu: number };
+
+// 3D organ loading animation (three.js) — lazy so its chunk loads alongside the
+// volume download rather than bloating the main viewer bundle.
+const RotatingModelLoader = lazy(() => import("../components/Loading"));
+
 const CT_PRESETS = [
 	{ name: "Soft Tissue", width: 400, center: 40 },
 	{ name: "Bone", width: 1800, center: 400 },
@@ -50,14 +58,58 @@ function VisualizationPage() {
 	const pantsCase = params.caseId;
 	const sessionId = params.sessionId;
 
-	// Determine URLs — session inference results vs. HuggingFace dataset
+	// Where to load the volumes from. Per the maintainer's rule, dataset cases load
+	// from the lab's LOCAL endpoints (served off disk on the JHU server — much faster
+	// for big full-body scans than streaming the .nii.gz from HuggingFace). We probe
+	// the local file and only fall back to the public HuggingFace mirror when it isn't
+	// present (e.g. a dev checkout without the image data), so the viewer never breaks.
 	const displayId = pantsCase ?? sessionId ?? "1";
-	const ctUrl = sessionId
-		? `${API_BASE}/api/session-ct/${sessionId}`
-		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${p}/ct.nii.gz?download=true`; })();
-	const segUrl = sessionId
-		? `${API_BASE}/api/session-segmentation/${sessionId}`
-		: (() => { const p = getPanTSId(pantsCase ?? "1"); return `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${p}/combined_labels.nii.gz?download=true`; })();
+	const [ctUrl, setCtUrl] = useState<string | null>(null);
+	const [segUrl, setSegUrl] = useState<string | null>(null);
+	// Whether the local volumes exist (enables the HD toggle). Dataset cases default to
+	// the low-res copy for fast loading; ?hd=1 in the URL requests full resolution.
+	const [localAvailable, setLocalAvailable] = useState(false);
+	const isHd =
+		typeof window !== "undefined" &&
+		new URLSearchParams(window.location.search).get("hd") === "1";
+
+	useEffect(() => {
+		let cancelled = false;
+		const resolveSources = async () => {
+			if (sessionId) {
+				setCtUrl(`${API_BASE}/api/session-ct/${sessionId}`);
+				setSegUrl(`${API_BASE}/api/session-segmentation/${sessionId}`);
+				return;
+			}
+			const id = pantsCase ?? "1";
+			const p = getPanTSId(id);
+			const localCt = `${API_BASE}/api/get-main-nifti/${id}`;
+			const localSeg = `${API_BASE}/api/get-segmentations/${id}`;
+			const hfCt = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/image_only/${p}/ct.nii.gz?download=true`;
+			const hfSeg = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/mask_only/${p}/combined_labels.nii.gz?download=true`;
+			// HEAD probe: fast, doesn't download the volume; 404/500 → use HF fallback.
+			const localOk = await fetch(localCt, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
+			if (cancelled) return;
+			setLocalAvailable(localOk);
+			// Local: low-res by default (server falls back to full if not yet generated),
+			// full res when ?hd=1. HuggingFace fallback is full res only.
+			const resParam = isHd ? "" : "?res=low";
+			setCtUrl(localOk ? `${localCt}${resParam}` : hfCt);
+			setSegUrl(localOk ? `${localSeg}${resParam}` : hfSeg);
+		};
+		resolveSources();
+		return () => { cancelled = true; };
+	}, [pantsCase, sessionId, isHd]);
+
+	// Flip between low-res and full-res by reloading the route — a fresh mount cleanly
+	// re-inits the Cornerstone/NiiVue contexts (re-running them in place is fragile).
+	const toggleHd = () => {
+		const params = new URLSearchParams(window.location.search);
+		if (isHd) params.delete("hd");
+		else params.set("hd", "1");
+		const qs = params.toString();
+		window.location.href = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+	};
 
 	const axial_ref = useRef<HTMLDivElement>(null);
 	const sagittal_ref = useRef<HTMLDivElement>(null);
@@ -86,6 +138,15 @@ function VisualizationPage() {
 	const [viewportIds, setViewportIds] = useState<string[]>([]);
 	const [volumeId, setVolumeId] = useState<string | null>(null);
 	const [showReportScreen, setShowReportScreen] = useState(false);
+	const [showStats, setShowStats] = useState(false);
+	const [organStats, setOrganStats] = useState<OrganStat[] | null>(null);
+	const [statsLoading, setStatsLoading] = useState(false);
+	const [statsError, setStatsError] = useState(false);
+	// Measured download progress for the loading screen (from the nifti loader's real
+	// bytes-loaded/total — accurate, not a guess).
+	const [dlPct, setDlPct] = useState<number | null>(null);
+	const [dlDone, setDlDone] = useState(false);
+	const dlTotalsRef = useRef<Record<string, number>>({});
 	const [showTaskDetails, setShowTaskDetails] = useState(true);
 	const [showOrganDetails, setShowOrganDetails] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -110,6 +171,32 @@ function VisualizationPage() {
 	useEffect(() => {
 		toggleCrosshairTool(crosshairToolActive);
 	}, [crosshairToolActive]);
+
+	// Track the CT download to show an accurate ETA while the case loads. We follow the
+	// largest-total stream (the CT volume, not the smaller segmentation) and derive the
+	// remaining time from the average measured throughput since the download started.
+	useEffect(() => {
+		if (!loading) return;
+		dlTotalsRef.current = {};
+		setDlPct(null);
+		setDlDone(false);
+		const unsub = subscribeToVolumeProgress((loaded, total, volumeId) => {
+			if (!total || total <= 0) return;
+			dlTotalsRef.current[volumeId] = total;
+			// Only track the biggest volume (CT); ignore the smaller seg progress stream.
+			let biggestId = volumeId;
+			let biggestTotal = 0;
+			for (const [id, t] of Object.entries(dlTotalsRef.current)) {
+				if (t > biggestTotal) { biggestTotal = t; biggestId = id; }
+			}
+			if (volumeId !== biggestId) return;
+			if (loaded >= total) { setDlDone(true); setDlPct(100); return; }
+			if (loaded > 0) {
+				setDlPct(Math.min(100, Math.max(0, Math.round((loaded / total) * 100))));
+			}
+		});
+		return unsub;
+	}, [loading, ctUrl]);
 
 	useEffect(() => {
 		const setup = async () => {
@@ -141,6 +228,8 @@ function VisualizationPage() {
 				cmap[parseInt(key)] = labelColorMap[parseInt(key)];
 			}
 			if (
+				!ctUrl ||
+				!segUrl ||
 				!axial_ref.current ||
 				!sagittal_ref.current ||
 				!coronal_ref.current ||
@@ -260,17 +349,35 @@ function VisualizationPage() {
 		}
 	}, [renderingEngine, viewportIds, volumeId]);
 
-	// Resize Cornerstone + NiiVue when view mode changes
+	// Resize Cornerstone + NiiVue when view mode changes. resize(immediate, keepCamera):
+	// keepCamera defaults to true, which preserved the zoom/pan from a single (fullscreen)
+	// view when returning to MPR — leaving the image zoomed/offset. Pass false and reset
+	// each camera so every viewport cleanly re-fits its new size.
 	useEffect(() => {
-		const timer = setTimeout(() => {
+		// Run after the grid/layout change has been applied AND painted (double rAF), so
+		// resize() measures the final element sizes — a fixed timeout could fire too early
+		// and bake in a wrong canvas size (panes ending up smaller than their cells).
+		let raf1 = 0;
+		let raf2 = 0;
+		const apply = () => {
 			if (renderingEngine) {
-				renderingEngine.resize(true);
+				renderingEngine.resize(true, false);
+				viewportIds.forEach((id) => {
+					const vp = renderingEngine.getViewport(id) as { resetCamera?: () => void };
+					vp?.resetCamera?.();
+				});
 				renderingEngine.render();
 			}
 			if (NV) NV.resizeListener();
-		}, 50);
-		return () => clearTimeout(timer);
-	}, [viewMode, renderingEngine, NV]);
+		};
+		raf1 = requestAnimationFrame(() => {
+			raf2 = requestAnimationFrame(apply);
+		});
+		return () => {
+			cancelAnimationFrame(raf1);
+			cancelAnimationFrame(raf2);
+		};
+	}, [viewMode, renderingEngine, NV, viewportIds]);
 
 	const handlePresetClick = (preset: typeof CT_PRESETS[number]) => {
 		setActivePreset(preset.name);
@@ -279,8 +386,15 @@ function VisualizationPage() {
 
 	const panelStyle = (panel: "axial" | "sagittal" | "coronal" | "3d"): React.CSSProperties => {
 		if (viewMode === "mpr") return {};
-		if (viewMode === panel) return { position: "absolute", inset: 0, zIndex: 10 };
-		return { visibility: "hidden" };
+		// 3D: overlay the render pane fullscreen but LEAVE the Cornerstone panes untouched
+		// in their grid cells. The render pane is the *last* grid item, so pulling it out of
+		// flow doesn't reflow the other three — their viewports stay valid, so switching back
+		// to MPR is instant (no resize/re-fit of the 2D views, no animation, correct sizes).
+		if (viewMode === "3d") {
+			return panel === "3d" ? { position: "absolute", inset: 0, zIndex: 20 } : {};
+		}
+		// 2D single view: collapse the grid to one cell and hide the rest.
+		return viewMode === panel ? {} : { display: "none" };
 	};
 
 	// Update segmentation visibility when state changes
@@ -321,6 +435,35 @@ function VisualizationPage() {
 		setOpacityValue(value);
 		setToolGroupOpacity(value / 100);
 		// updateGeneralOpacity(render_ref, value / 100);
+	};
+
+	// Per-organ volume (cm³) + mean HU — the existing quantitative layer the backend
+	// already computes for the PDF report, surfaced inline. Fetched once, on first open.
+	const loadOrganStats = async () => {
+		if (organStats || statsLoading) return;
+		setStatsLoading(true);
+		setStatsError(false);
+		try {
+			const fd = new FormData();
+			fd.append("sessionKey", String(displayId));
+			const res = await fetch(`${API_BASE}/api/mask-data`, { method: "POST", body: fd });
+			const data = await res.json();
+			// The endpoint returns its errors with HTTP 200 + an `error` field, so check both.
+			if (!res.ok || data.error) {
+				throw new Error(data.error || `HTTP ${res.status}`);
+			}
+			setOrganStats((data.organ_metrics ?? []) as OrganStat[]);
+		} catch (e) {
+			console.error(e);
+			setStatsError(true);
+		} finally {
+			setStatsLoading(false);
+		}
+	};
+
+	const handleToggleStats = () => {
+		setShowStats((v) => !v);
+		loadOrganStats();
 	};
 
 	const handleDownloadClick = async () => {
@@ -390,43 +533,48 @@ function VisualizationPage() {
 				<div className="sidebar" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50 }}>
 					<div>
 						<div className="flex" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50, padding: '16px 0 0 16px', gap: '8px' }}>
-							<div
-								className="hover:bg-gray-700 cursor-pointer bg-[#16181d] p-2 rounded-lg w-fit"
-								onClick={() => setShowTaskDetails((prev) => !prev)}
+							<button
+								className="vp-iconbtn"
+								title="Toggle controls"
+								aria-label="Toggle controls"
+								onClick={() => {
+									// Opening the controls must also close the Organs panel, otherwise the
+									// two slide-in panels stack on top of each other.
+									setShowOrganDetails(false);
+									setShowTaskDetails((prev) => !prev);
+								}}
 							>
-								<IconSettings color="white" />
-							</div>
-							<div
-								className="hover:bg-gray-700 cursor-pointer bg-[#16181d] p-2 rounded-lg w-fit"
+								<IconSettings size={20} color="white" />
+							</button>
+							<button
+								className="vp-iconbtn"
+								title="Back to dashboard"
+								aria-label="Back to dashboard"
 								onClick={() => navBack()}
 							>
-								<IconHome color="white" />
-							</div>
+								<IconHome size={20} color="white" />
+							</button>
 						</div>
 						<div
-							className={`text-black bg-[#16181d] rounded-lg w-64 h-dvh p-4 pt-14 gap-3 flex flex-col transition-all duration-300 ease-in-out origin-left ${showTaskDetails ? "translate-x-[-64rem]" : "translate-x-0"}`}
+							className={`vp-sidebar w-64 h-dvh p-4 pt-16 gap-3 flex flex-col overflow-y-auto transition-all duration-300 ease-in-out origin-left ${showTaskDetails ? "translate-x-[-64rem]" : "translate-x-0"}`}
 							style={{ position: 'fixed', top: 0, left: 0, zIndex: 49 }}
 						>
 							{/* Toggle dropdown */}
 
 							{!showTaskDetails && (
 								<>
-									<div className="grid grid-cols-6 items-center justify-center">
-										<div>
-
+									{zoomMode ? null : (
+										<div className="flex flex-col gap-1 items-start text-left px-1">
+											<span className="vp-case-eyebrow">{sessionId ? "Session" : "Case"}</span>
+											<span className="vp-case-id">{displayId}</span>
 										</div>
-										{zoomMode ? null : (
-
-											<div className="text-white font-bold text-xl col-span-4">{`Case: ${displayId}`}</div>
-										)}
-										<div></div>
-									</div>
+									)}
 
 									<>
 										{/* View mode */}
-									<div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "10px", padding: "12px" }}>
-										<div className="text-white text-sm font-semibold mb-2 text-center">View</div>
-										<div className="flex flex-wrap gap-1 justify-center">
+									<div className="vp-panel">
+										<div className="vp-panel__title">View</div>
+										<div className="vp-seg">
 											{([
 												{ mode: "mpr" as ViewMode, label: "⊞ MPR" },
 												{ mode: "axial" as ViewMode, label: "Axial" },
@@ -434,27 +582,25 @@ function VisualizationPage() {
 												{ mode: "coronal" as ViewMode, label: "Cor" },
 												{ mode: "3d" as ViewMode, label: "3D" },
 											]).map(({ mode, label }) => (
-												<button key={mode} onClick={() => setViewMode(mode)} style={{
-													padding: "4px 10px", borderRadius: "6px", fontSize: "12px",
-													fontWeight: 600, border: "none", cursor: "pointer",
-													background: viewMode === mode ? "#ffffff" : "rgba(255,255,255,0.1)",
-													color: viewMode === mode ? "#08090b" : "rgba(255,255,255,0.6)",
-												}}>{label}</button>
+												<button
+													key={mode}
+													onClick={() => setViewMode(mode)}
+													className={`vp-seg__btn ${viewMode === mode ? "vp-seg__btn--active" : ""}`}
+												>{label}</button>
 											))}
 										</div>
 									</div>
 
 									{/* CT Window presets */}
-									<div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "10px", padding: "12px" }}>
-										<div className="text-white text-sm font-semibold mb-2 text-center">CT Window</div>
-										<div className="flex flex-wrap gap-1 justify-center">
+									<div className="vp-panel">
+										<div className="vp-panel__title">CT Window</div>
+										<div className="vp-seg">
 											{CT_PRESETS.map((preset) => (
-												<button key={preset.name} onClick={() => handlePresetClick(preset)} style={{
-													padding: "4px 10px", borderRadius: "6px", fontSize: "12px",
-													fontWeight: 600, border: "none", cursor: "pointer",
-													background: activePreset === preset.name ? "#ffffff" : "rgba(255,255,255,0.1)",
-													color: activePreset === preset.name ? "#08090b" : "rgba(255,255,255,0.6)",
-												}}>{preset.name}</button>
+												<button
+													key={preset.name}
+													onClick={() => handlePresetClick(preset)}
+													className={`vp-seg__btn ${activePreset === preset.name ? "vp-seg__btn--active" : ""}`}
+												>{preset.name}</button>
 											))}
 										</div>
 									</div>
@@ -486,24 +632,15 @@ function VisualizationPage() {
 									{/* {!zoomMode ? ( */}
 									<>
 
-										<div className="flex gap-3 items-center justify-center">
-											<div
-												className={`group cursor-pointer rounded-md relative border `}
+										<div className="vp-toolrow">
+											<button
+												className={`vp-tool ${crosshairToolActive ? "vp-tool--active" : ""}`}
+												onClick={() => setCrosshairToolActive((prev) => !prev)}
+												aria-label="Crosshair mode"
 											>
-												<div className={`border-gray-500 hover:bg-gray-700 border rounded-md p-2 ${crosshairToolActive ? "bg-gray-700" : ""
-													}`}>
-
-													<IconPointer
-														className="w-6 h-6 text-white relative cursor-pointer"
-														onClick={() =>
-															setCrosshairToolActive((prev) => !prev)
-														}
-													></IconPointer>
-												</div>
-												<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
-													Crosshair Mode
-												</span>
-											</div>
+												<IconPointer size={20} color={crosshairToolActive ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Crosshair</span>
+											</button>
 											{/* <div className="group cursor-pointer rounded-md relative">
 													{!zoomMode ? (
 														<>
@@ -521,26 +658,40 @@ function VisualizationPage() {
 													) : null }
 												</div> */}
 
-											<div className="group cursor-pointer rounded-md relative">
-												<div className="border-gray-500 hover:bg-gray-700 border rounded-md p-2">
-
-													<IconDownload
-														onClick={handleDownloadClick}
-														className="w-6 h-6 text-white relative"
-													></IconDownload>
-												</div>
-												<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
-													Download
-												</span>
-											</div>
-											<div className="group cursor-pointer rounded-md relative">
-												<div className="border-gray-500 hover:bg-gray-700 border rounded-md p-2">
-													<IconReport className="w-6 h-6 text-white relative"></IconReport>
-												</div>
-												<span className="transition-all pointer-events-none duration-100 scale-0 group-hover:scale-100 absolute top-0 left-12 z-1 bg-gray-900 text-white rounded-md p-2">
-													Report
-												</span>
-											</div>
+											<button
+												className="vp-tool"
+												onClick={handleDownloadClick}
+												aria-label="Download segmentations"
+											>
+												<IconDownload size={20} color="white" />
+												<span className="vp-tool__tip">Download</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={() => setShowReportScreen(true)}
+												aria-label="Open report"
+											>
+												<IconReport size={20} color="white" />
+												<span className="vp-tool__tip">Report</span>
+											</button>
+											<button
+												className={`vp-tool ${showStats ? "vp-tool--active" : ""}`}
+												onClick={handleToggleStats}
+												aria-label="Organ statistics"
+											>
+												<IconChartBar size={20} color={showStats ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Organ stats</span>
+											</button>
+											{!sessionId && localAvailable && (
+												<button
+													className={`vp-tool ${isHd ? "vp-tool--active" : ""}`}
+													onClick={toggleHd}
+													aria-label={isHd ? "Switch to fast (low-res)" : "Load full resolution"}
+												>
+													<span style={{ fontFamily: "var(--vp-mono)", fontSize: "12px", fontWeight: 700 }}>HD</span>
+													<span className="vp-tool__tip">{isHd ? "Full res · click for fast" : "Load full resolution"}</span>
+												</button>
+											)}
 										</div>
 									</>
 									{/* ) : null} */}
@@ -562,45 +713,92 @@ function VisualizationPage() {
           null
         } */}
 				{loading ? (
-					pantsCase ? (
-						<div className="flex flex-col gap-20 items-center justify-center">
-							<div className="w-fit z-99">
-								<SnakeGame />
+					<>
+						{pantsCase && (
+							<div className="vp-loadinfo">
+								<div className="w-fit">
+									<SnakeGame />
+								</div>
+								{(dlDone || dlPct != null) && (
+									<div className="vp-progress">
+										<div className="vp-progress__head">
+											<span className="vp-progress__label">
+												{dlDone ? "Finalizing…" : "Loading scan"}
+											</span>
+											{!dlDone && dlPct != null && (
+												<span className="vp-progress__pct">{dlPct}%</span>
+											)}
+										</div>
+										<div className="vp-progress__track">
+											<div
+												className={`vp-progress__fill ${dlDone ? "is-finalizing" : ""}`}
+												style={dlDone ? undefined : { width: `${dlPct ?? 0}%` }}
+											/>
+										</div>
+									</div>
+								)}
 							</div>
-							<RotatingModelLoader />
-						</div>
-					) : (
-						<div className="flex items-center justify-center h-full">
-							<RotatingModelLoader />
-						</div>
-					)
+						)}
+						{/* 3D organ loader; falls back to a lightweight spinner if it can't
+						    render (lazy chunk error / WebGL context unavailable). */}
+						<ErrorBoundary
+							fallback={
+								<div className="vp-loading">
+									<div className="flex flex-col items-center gap-4">
+										<div className="vp-spinner" />
+										<div className="vp-loading__text">Preparing case {displayId}…</div>
+									</div>
+								</div>
+							}
+						>
+							<Suspense
+								fallback={
+									<div className="vp-loading">
+										<div className="vp-spinner" />
+									</div>
+								}
+							>
+								<RotatingModelLoader />
+							</Suspense>
+						</ErrorBoundary>
+					</>
 				) : null}
 				<div
 					className="visualization-container"
 					ref={VisualizationContainer_ref}
-					style={{ overflow: "hidden" }}
+					style={{
+						overflow: "hidden",
+						// Collapse to a single cell only for the 2D single views. MPR and 3D keep
+						// the 2×2 grid (3D just overlays the render pane on top of it).
+						...(viewMode !== "mpr" && viewMode !== "3d"
+							? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
+							: {}),
+					}}
 				>
 					<div
-						className={`axial ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-red-500"}`}
+						className={`axial ${loading ? "" : "vp-pane vp-pane--axial"}`}
+						data-label="Axial"
 						ref={axial_ref}
 						style={panelStyle("axial")}
 						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 					<div
-						className={`sagittal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-yellow-500"}`}
+						className={`sagittal ${loading ? "" : "vp-pane vp-pane--sagittal"}`}
+						data-label="Sagittal"
 						ref={sagittal_ref}
 						style={panelStyle("sagittal")}
 						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 
 					<div
-						className={`coronal ${loading ? "" : "border-b-4 border-r-4 border-t-4 border-l-4 border-green-500"}`}
+						className={`coronal ${loading ? "" : "vp-pane vp-pane--coronal"}`}
+						data-label="Coronal"
 						ref={coronal_ref}
 						style={panelStyle("coronal")}
 						onClick={(e) => { handleMouseClick(e); }}
 					></div>
 
-					<div className={`render`} style={panelStyle("3d")}>
+					<div className={`render ${loading ? "" : "vp-pane vp-pane--render"}`} data-label="3D" style={panelStyle("3d")}>
 						<div className="canvas">
 							<canvas
 								ref={render_ref}
@@ -611,18 +809,8 @@ function VisualizationPage() {
 							</canvas>
 							{tooltip.visible && (
 								<div
-									style={{
-										position: "fixed",
-										top: tooltip.y,
-										left: tooltip.x,
-										background: "rgba(0,0,0,0.8)",
-										color: "white",
-										padding: "4px 8px",
-										borderRadius: "4px",
-										fontSize: "12px",
-										pointerEvents: "none",
-										zIndex: 9999,
-									}}
+									className="vp-organ-tip"
+									style={{ top: tooltip.y, left: tooltip.x }}
 								>
 									{tooltip.text}
 								</div>
@@ -643,6 +831,53 @@ function VisualizationPage() {
 				showOrganDetails={showOrganDetails}
 				labelColorMap={labelColorMap}
 			/>
+
+			{showStats && (
+				<div className="vp-stats">
+					<div className="vp-stats__head">
+						<span className="vp-panel__title">Organ Statistics</span>
+						<button
+							className="vp-stats__close"
+							onClick={() => setShowStats(false)}
+							aria-label="Close organ statistics"
+						>
+							×
+						</button>
+					</div>
+					{statsLoading ? (
+						<div className="vp-stats__msg">Computing…</div>
+					) : statsError ? (
+						<div className="vp-stats__msg">
+							Organ statistics aren't available for this case here.
+							<br />
+							<span style={{ opacity: 0.7 }}>
+								(They're computed from the dataset volumes on the server.)
+							</span>
+						</div>
+					) : organStats && organStats.length > 0 ? (
+						<div className="vp-stats__table">
+							<div className="vp-stats__row vp-stats__row--head">
+								<span>Organ</span>
+								<span>Volume</span>
+								<span>Mean HU</span>
+							</div>
+							{organStats.map((o, i) => {
+								const badVol = o.volume_cm3 === 999999;
+								const badHu = o.mean_hu === 999999;
+								return (
+									<div className="vp-stats__row" key={`${o.organ_name}-${i}`}>
+										<span>{filenameToName(o.organ_name)}</span>
+										<span>{badVol ? "NA" : `${Math.round(o.volume_cm3)} cm³`}</span>
+										<span>{badHu ? "NA" : Math.round(o.mean_hu)}</span>
+									</div>
+								);
+							})}
+						</div>
+					) : (
+						<div className="vp-stats__msg">No organ data available.</div>
+					)}
+				</div>
+			)}
 
 			{
 				showReportScreen && (

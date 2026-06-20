@@ -1,5 +1,5 @@
 import type { Color } from "@cornerstonejs/core/types";
-import { IconArrowLeft, IconChevronRight } from "@tabler/icons-react";
+import { IconArrowLeft, IconCheck, IconChevronRight } from "@tabler/icons-react";
 import React, { useEffect, useState } from "react";
 import {
 	MiscColorMap, OrganSystems,
@@ -105,8 +105,8 @@ function Checked({
 							onClick={() => setCollapsed((prev) => !prev)}
 						>
 							<IconChevronRight
-								className={`cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center ${
-									collapsed ? "rotate-90" : ""
+								className={`vp-organs__chevron ${
+									collapsed ? "is-open" : ""
 								}`}
 							/>
 							<div
@@ -115,15 +115,16 @@ function Checked({
 								{system}
 							</div>
 						</div>
-						<input
-							type="checkbox"
-							className="w-4 h-4 text-blue-600 !bg-gray-700 border-gray-600 !rounded-sm focus:ring-blue-600 ring-offset-gray-800 focus:ring-2"
-							aria-label="s"
-							checked={partialToggled}
-							onChange={() => {
-								updateToggle(!partialToggled);
-							}}
-						/>
+						<button
+							type="button"
+							role="checkbox"
+							aria-checked={partialToggled}
+							aria-label={`Toggle ${system}`}
+							className={`vp-checkbox ${partialToggled ? "vp-checkbox--on" : ""}`}
+							onClick={() => updateToggle(!partialToggled)}
+						>
+							{partialToggled && <IconCheck size={13} stroke={3} />}
+						</button>
 					</>
 				) : (
 					<>
@@ -132,8 +133,8 @@ function Checked({
 							onClick={() => setCollapsed((prev) => !prev)}
 						>
 							<IconChevronRight
-								className={`cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center ${
-									collapsed ? "rotate-90" : ""
+								className={`vp-organs__chevron ${
+									collapsed ? "is-open" : ""
 								}`}
 							/>
 							<div
@@ -168,7 +169,7 @@ function Checked({
 						if (organ == "pancreas") return null;
 						return (
 							<div className={`flex items-center gap-2 ${level == 0 ? "pl-8" : "pl-9"} `} key={idx}>
-								<div className="cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center transition-all duration origin-center" />
+								<div className="vp-organs__chevron" />
 								<div
 									className={`text-white text-md rounded-md p-1 cursor-pointer hover:border-2 ${
 										!checkState[getOrganIdx(organ) + 1]
@@ -237,27 +238,27 @@ function OrganCheckbox({
 
 	return (
 		<div
-			className={`flex w-2xs h-screen flex-col gap-4 p-3 z-5 absolute top-0 left-0 bg-[#0f0824] duration-200 transition-all ${
+			className={`vp-organs flex flex-col gap-4 w-72 h-screen pt-16 px-4 pb-4 z-40 fixed top-0 left-0 duration-200 transition-all ${
 				showOrganDetails ? "translate-x-0" : "-translate-x-full"
 			} origin-left`}
 		>
 			<div className="flex justify-between items-center w-full">
 
-			<div className="flex gap-4 items-center justify-start">
+			<div className="flex gap-2 items-center justify-start">
 				<IconArrowLeft
-					className="cursor-pointer text-white hover:bg-gray-700 rounded-md flex items-center justify-center"
+					className="vp-organs__back"
 					onClick={() => {
 						setShowTaskDetails(false);
 						setShowOrganDetails(false);
 					}}
 					/>
-			<div className="text-white text-2xl">Organs</div>
+			<div className="vp-organs__title">Organs</div>
 			</div>
-			<button className="!p-1.5 !bg-gray-700" onClick={() => toggleAll()}>
+			<button className="vp-btn" onClick={() => toggleAll()}>
 				Toggle all
 			</button>
 			</div>
-			<div className="flex flex-col gap-2 overflow-scroll">
+			<div className="vp-organs__list flex flex-col gap-1 overflow-y-auto">
 				{OrganSystemsArray.map((system: Systems, idx) => {
 					return (
 						<Checked

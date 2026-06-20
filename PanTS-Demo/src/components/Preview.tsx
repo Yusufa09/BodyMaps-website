@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../helpers/constants";
+import { prefetchViewer } from "../helpers/prefetchViewer";
 import type { PreviewType } from "../types";
 
 type Props = {
@@ -47,7 +48,10 @@ export default function Preview({ id, previewMetadata }: Props) {
 					  }
 					: {}
 			}
-			onMouseEnter={() => setHovered(true)}
+			onMouseEnter={() => {
+				setHovered(true);
+				prefetchViewer(); // warm the viewer JS chunk so clicking feels instant
+			}}
 			onMouseLeave={() => setHovered(false)}
 			onClick={() => navigate(`/case/${id}`)}
 		>
@@ -71,6 +75,7 @@ export default function Preview({ id, previewMetadata }: Props) {
 					<img
 						src={thumbUrl}
 						alt={`Case ${id} CT scan`}
+						loading="lazy"
 						decoding="async"
 						onLoad={() => setImgLoaded(true)}
 						onError={handleImgError}

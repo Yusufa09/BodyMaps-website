@@ -38,72 +38,67 @@ export default function WindowingSlider({ windowWidth, windowCenter, onWindowCha
     }
   };
   return (
-    <div className="windowing-slider w-full flex flex-col gap-2 border-2 rounded-sm bg-gray-900 shadow-md">
-      <div className="bg-gray-600 w-full h-8 flex items-center justify-center text-center rounded-t-sm text-white">Brightness/Contrast</div>
-      <div className="pl-4 pr-4 pb-2">
-
-        <div className="flex gap-0.5 flex-col w-full justify-center items-center">
-          <div className="flex justify-between w-full items-center">
-            <label style={{ color: 'white' }}>Brightness</label>
-            <form onSubmit={handleCenterSubmit} className="w-1/3">
-              <input
-                type="number"
-                aria-label="s"
-                value={centerInput}
-                onChange={handleCenterInputChange}
-                min="-1000"
-                max="1000"
-                className="border text-white rounded-md p-1 w-full"
-              />
-            </form>
-          </div>
-          <input
-            type="range"
-            min="-1000"
-            max="1000"
-            aria-label="s"
-            step="1"
-            value={windowCenter * -1}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              setCenterInput(v);
-              onWindowChange(null, v * -1);
-            }}
-            className="w-full"
-          />
+    <div className="vp-panel">
+      <div className="vp-panel__title">Brightness / Contrast</div>
+      <div className="flex flex-col gap-2">
+        <div className="vp-row">
+          <label className="vp-label">Brightness</label>
+          <form onSubmit={handleCenterSubmit}>
+            <input
+              type="number"
+              aria-label="Brightness"
+              value={centerInput}
+              onChange={handleCenterInputChange}
+              min="-1000"
+              max="1000"
+              className="vp-input"
+            />
+          </form>
         </div>
-        <div className="flex gap-0.5 flex-col w-full justify-center items-center">
-          <div className="flex justify-between w-full items-center">
-
-            <label style={{ color: 'white' }}>Contrast</label>
-
-            <form onSubmit={handleWidthSubmit} className="w-1/3">
-              <input
-                type="number"
-                value={widthInput}
-                min="1"
-                aria-label="s"
-                max="200"
-                onChange={handleWidthInputChange}
-                className="border text-white p-1 rounded-md w-full"
-              />
-            </form>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="2000"
-            aria-label="s"
-            step="1"
-            value={windowWidth}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              setWidthInput(v);
-              onWindowChange(v, null);
-            }}
-            className="w-full"
-          />
+        <input
+          type="range"
+          min="-1000"
+          max="1000"
+          aria-label="Brightness"
+          step="1"
+          value={windowCenter * -1}
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            setCenterInput(v);
+            onWindowChange(null, v * -1);
+          }}
+          className="vp-range"
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="vp-row">
+          <label className="vp-label">Contrast</label>
+          <form onSubmit={handleWidthSubmit}>
+            <input
+              type="number"
+              value={widthInput}
+              min="1"
+              aria-label="Contrast"
+              max="200"
+              onChange={handleWidthInputChange}
+              className="vp-input"
+            />
+          </form>
         </div>
+        <input
+          type="range"
+          min="1"
+          max="2000"
+          aria-label="Contrast"
+          step="1"
+          value={windowWidth}
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            setWidthInput(v);
+            onWindowChange(v, null);
+          }}
+          className="vp-range"
+        />
       </div>
     </div>
   );

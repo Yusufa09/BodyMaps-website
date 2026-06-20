@@ -299,8 +299,16 @@ def get_mask_data():
   
 @api_blueprint.route('/get-main-nifti/<clabel_id>', methods=['GET'])
 def get_main_nifti(clabel_id):
-    subfolder = "ImageTr" if int(clabel_id) < 9000 else "ImageTe" 
-    main_nifti_path = f"{Constants.PANTS_PATH}/data/{subfolder}/{get_panTS_id(clabel_id)}/{Constants.MAIN_NIFTI_FILENAME}"
+    subfolder = "ImageTr" if int(clabel_id) < 9000 else "ImageTe"
+    case_dir = f"{Constants.PANTS_PATH}/data/{subfolder}/{get_panTS_id(clabel_id)}"
+    main_nifti_path = f"{case_dir}/{Constants.MAIN_NIFTI_FILENAME}"
+
+    # ?res=low → serve the precomputed low-res copy when present (much smaller/faster
+    # for big full-body scans). Falls back to full res if it hasn't been generated.
+    if (request.args.get('res') or '').strip().lower() == 'low':
+        low_path = f"{case_dir}/{Constants.MAIN_NIFTI_FILENAME.replace('.nii.gz', '_lowres.nii.gz')}"
+        if os.path.exists(low_path):
+            main_nifti_path = low_path
 
     if os.path.exists(main_nifti_path):
         response = make_response(send_file(main_nifti_path, mimetype='application/gzip'))
@@ -308,6 +316,8 @@ def get_main_nifti(clabel_id):
         response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
         # response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
         response.headers['Content-Encoding'] = 'gzip'
+        # Volumes are immutable per case — let the browser cache so revisits are instant.
+        response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
 
     else:
         print(f"Could not find filepath: {main_nifti_path}. ")
@@ -425,9 +435,21 @@ async def get_specific_segmentations(combined_labels_id):
         return jsonify({"error": f"Error loading organ metrics: {str(e)}"}), 500
 @api_blueprint.route('/get-segmentations/<combined_labels_id>', methods=['GET'])
 async def get_segmentations(combined_labels_id):
-    subfolder = "LabelTr" if int(combined_labels_id) < 9000 else "LabelTe" 
+    subfolder = "LabelTr" if int(combined_labels_id) < 9000 else "LabelTe"
     nifti_path = f"{Constants.PANTS_PATH}/data/{subfolder}/{get_panTS_id(combined_labels_id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
-    labels = list(Constants.PREDEFINED_LABELS.values()) 
+    labels = list(Constants.PREDEFINED_LABELS.values())
+
+    # ?res=low → serve the precomputed low-res mask (paired with the low-res CT so the
+    # overlay stays aligned). Falls back to full res below if it hasn't been generated.
+    if (request.args.get('res') or '').strip().lower() == 'low':
+        low_path = nifti_path.replace('.nii.gz', '_lowres.nii.gz')
+        if os.path.exists(low_path):
+            response = make_response(send_file(low_path, mimetype='application/gzip'))
+            response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+            return response
+
     if not os.path.exists(nifti_path):
         await store_files(combined_labels_id)
         niftiProcessor = NpzProcessor()
@@ -468,6 +490,7 @@ async def get_segmentations(combined_labels_id):
         response = make_response(send_file(converted_path, mimetype='application/gzip'))
         response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
         response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
         # response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
         # response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
 

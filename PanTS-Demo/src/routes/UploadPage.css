@@ -472,3 +472,50 @@
 .status-msg-session {
   color: #6a6a6a;
 }
+
+/* ── Pre-inference CT preview ── */
+.ct-preview-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8f8f8f;
+  margin: 16px 0 8px;
+}
+.ct-preview {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  background: #0a0b0d;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ct-preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ct-preview-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.ct-preview--msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: #8f8f8f;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  text-align: center;
+  padding: 0 16px;
+}

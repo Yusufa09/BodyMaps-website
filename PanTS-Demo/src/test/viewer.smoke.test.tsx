@@ -24,6 +24,7 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	setToolGroupOpacity: vi.fn(),
 	setVisibilities: vi.fn(),
 	subscribeToCrosshairChanges: vi.fn(),
+	subscribeToVolumeProgress: vi.fn(() => () => {}),
 	toggleCrosshairTool: vi.fn(),
 }));
 
