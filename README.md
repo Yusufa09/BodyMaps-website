@@ -1,12 +1,12 @@
 # Backend
----
-### Create Conda Environment
+
+#### Create Conda Environment
 ```
 conda create -n PanTS_backend python=3.11
 conda activate PanTS_backend
 ```
 
-### Set up environment backend
+#### Set up environment backend
 ```
 cd flask-server
 touch .env // makes .env file
@@ -30,7 +30,7 @@ python app.py
 ```
 
 # Frontend
----
+
 ```
 cd PanTS-Demo
 touch .env
@@ -42,7 +42,8 @@ Inside .env:
 VITE_API_BASE=http://localhost:5001
 ```
 
-### Run frontend
+#### Run frontend
+
 ```
 npm install
 npm run dev
@@ -57,19 +58,19 @@ After pushing changes, SSH into the server and run the following.
 ssh visitor@bdmap1.wse.jhu.edu
 ```
 
-### 1. Pull latest changes
+#### 1. Pull latest changes
 ```
 cd /home/visitor/PanTS-Viewer
 git fetch
 git pull
 ```
 
-### 2. Rebuild the frontend
+#### 2. Rebuild the frontend
 ```
 cd /home/visitor/PanTS-Viewer/PanTS-Demo && npm run build
 ```
 
-### 3. Restart the backend
+#### 3. Restart the backend
 ```
 # Kill the old gunicorn process
 kill $(pgrep -f "gunicorn.*app:app")
@@ -83,7 +84,7 @@ nohup /home/visitor/.conda/envs/PanTS_backend/bin/gunicorn \
 echo "PID: $!"
 ```
 
-### 4. Verify the backend is running
+#### 4. Verify the backend is running
 ```
 sleep 3 && curl http://127.0.0.1:8000/api/ping
 ```
