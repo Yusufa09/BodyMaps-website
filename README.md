@@ -53,6 +53,10 @@ npm run dev
 
 After pushing changes, SSH into the server and run the following.
 
+```
+ssh visitor@bdmap1.wse.jhu.edu
+```
+
 ### 1. Pull latest changes
 ```
 cd /home/visitor/PanTS-Viewer
