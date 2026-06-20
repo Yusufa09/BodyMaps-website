@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "./App.css";
 import { AnnotationProvider } from "./contexts/annotationContexts";
 import { FileProvider } from "./contexts/fileContexts";
@@ -51,6 +51,8 @@ function App() {
 						<Suspense fallback={<RouteFallback />}>
 							<Routes>
 								<Route path="/" element={<LandingPage />} />
+							{/* Old /home.html links now serve the React shell — send them to the app. */}
+							<Route path="/home.html" element={<Navigate to="/" replace />} />
 								<Route path="/dashboard" element={<Homepage />} />
 								{/* <Route path="/data" element={<DataPage />} /> */}
 								{/* <Route path="/:type/:page" element={<Homepage />} /> */}
