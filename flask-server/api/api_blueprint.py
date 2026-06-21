@@ -201,52 +201,29 @@ def get_image_preview(clabel_id):
 
 @api_blueprint.route("/cases/<case_id>/mesh-manifest")
 def get_mesh_manifest(case_id):
-    subfolder = "LabelTr" if int(case_id) < 9000 else "LabelTe"
-    path = os.path.join(Constants.PANTS_PATH, "data", subfolder, get_panTS_id(case_id), Constants.COMBINED_LABELS_NIFTI_FILENAME) 
-    try:
-        manifest = generate_mesh_manifest(case_id, str(path))
+    manifest_path = os.path.join(Constants.MESH_PATH, get_panTS_id(case_id), "manifest.json") 
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    if not os.path.exists(manifest_path):
+        return jsonify({"error": f"File not found: {manifest_path} "}), 404
 
-    response = jsonify(manifest)
-    return response
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    return jsonify(manifest)
 
 @api_blueprint.route("/cases/<case_id>/meshes/<filename>")
 def get_mesh_file(case_id, filename):
-    subfolder = "LabelTr" if int(case_id) < 9000 else "LabelTe"
-    label_path = os.path.join(Constants.PANTS_PATH, "data", subfolder, get_panTS_id(case_id), Constants.COMBINED_LABELS_NIFTI_FILENAME)
-
-    if not os.path.exists(label_path):
-        return jsonify({"error": "File not found"}), 404
-
-    if not filename[-4:] == ".glb":
-        return jsonify({"error": "File not found"}), 404
-
-    organ_key = filename[:-4]
-
+    mesh_path = os.path.join(Constants.MESH_PATH, case_id, filename)
     try:
-        glb_bytes = generate_organ_glb_bytes(
-            organ_key,
-            str(label_path),
+        response = send_file(
+            mesh_path,
+            mimetype="model/gltf-binary",
+            conditional=False,
         )
 
-
-    except TimeoutError:
-        return jsonify({"error": "Timeout"}), 504
-    except KeyError as e:
-        return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
-    
-    file_obj = BytesIO(glb_bytes)
-    file_obj.seek(0)
-
-    response = send_file(
-        file_obj,
-        mimetype="model/gltf-binary",
-        conditional=False,
-    )
+        return jsonify({"error": f"Error generating GLB: {str(e)}"}), 500
+        
 
     return response
 
