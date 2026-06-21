@@ -604,7 +604,7 @@ function VisualizationPage() {
 
 					<div className={`render`} style={panelStyle("3d")}>
 						<div className="canvas">
-							<SegmentationMeshViewer caseId={displayId} checkState={checkState} loading={loading}/>
+							<SegmentationMeshViewer opacity={opacityValue / 100} caseId={displayId} checkState={checkState} loading={loading}/>
 						</div>
 					</div>
 				</div>

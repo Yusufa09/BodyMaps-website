@@ -9,6 +9,7 @@ type SegmentationMeshViewerProps = {
   caseId: string;
   loading: boolean
   checkState: boolean[];
+  opacity: number;
 };
 
 
@@ -22,7 +23,7 @@ export async function fetchMeshManifest(caseId: string): Promise<MeshManifest> {
   return res.json();
 }
 
-export function SegmentationMeshViewer({ caseId, checkState, loading }: SegmentationMeshViewerProps) {
+export function SegmentationMeshViewer({ caseId, checkState, loading, opacity }: SegmentationMeshViewerProps) {
   const [manifest, setManifest] = useState<MeshManifest | null>(null);
   const [loaded, setLoaded] = useState<Record<number, boolean>>({});
 
@@ -84,6 +85,7 @@ export function SegmentationMeshViewer({ caseId, checkState, loading }: Segmenta
                       key={organ.id}
                       organ={organ}
                       visible={!!checkState[organ.id]}
+                      opacity={opacity}
                     />
                   );
                 })}

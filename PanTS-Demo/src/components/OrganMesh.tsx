@@ -14,7 +14,6 @@ export const rgbToHex = (r: number, g: number, b: number, a: number) =>
 
 export function OrganMesh({ organ, visible, opacity = 1 }: OrganMeshProps) {
   const gltf = useGLTF(organ.url);
-
   const object = useMemo(() => {
     return gltf.scene.clone(true);
   }, [gltf.scene]);
