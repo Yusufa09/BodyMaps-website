@@ -11,11 +11,48 @@ const {
     ToolGroupManager,
     Enums: csToolsEnums,
     segmentation,
+    annotation,
     PanTool,
     ZoomTool,
     StackScrollTool,
     CrosshairsTool,
+    LengthTool,
+    ProbeTool,
+    RectangleROITool,
 } = cornerstoneTools;
+
+// Measurement tools the toolbar can switch the primary mouse button to. Length =
+// distance in mm, Probe = HU readout at a point, RectangleROI = area + mean/max/min HU.
+export const LENGTH_TOOL = LengthTool.toolName;
+export const PROBE_TOOL = ProbeTool.toolName;
+export const ROI_TOOL = RectangleROITool.toolName;
+export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, PROBE_TOOL, ROI_TOOL] as const;
+export type MeasurementToolName = (typeof MEASUREMENT_TOOL_NAMES)[number];
+
+// Cornerstone's defaults draw measurements in yellow (resting) / green (selected) — the
+// standard radiology-viewer convention for a plain grayscale background. BodyMaps overlays
+// colored organ masks (reds/pinks/purples/teal), so yellow/green collide with them. Cyan
+// gives the strongest contrast over the warm masks while still reading on grayscale CT;
+// selected annotations go white for clear edit feedback. The dashed leader line that
+// tethers each label to its measurement is recolored to match.
+const MEASURE_COLOR = "#22d3ee"; // cyan — resting
+const MEASURE_COLOR_HI = "#67e8f9"; // lighter cyan — hover
+const MEASUREMENT_ANNOTATION_STYLE = {
+    color: MEASURE_COLOR,
+    colorHighlighted: MEASURE_COLOR_HI,
+    colorSelected: "#ffffff",
+    colorLocked: MEASURE_COLOR,
+    lineWidth: "2",
+    textBoxColor: MEASURE_COLOR,
+    textBoxColorHighlighted: MEASURE_COLOR_HI,
+    textBoxColorSelected: "#ffffff",
+    textBoxLinkLineColor: MEASURE_COLOR,
+    // Pin the font/shadow too: if a prior (partial) style ever persisted in module state,
+    // the merge base could be missing these and the value labels wouldn't render.
+    textBoxFontFamily: "Helvetica Neue, Helvetica, Arial, sans-serif",
+    textBoxFontSize: "14px",
+    shadow: true,
+};
 
 const renderingEngineId = "rendering_engine";
 const toolGroupId = "myToolGroup";
@@ -130,9 +167,22 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(ZoomTool);
     cornerstoneTools.addTool(StackScrollTool);
     cornerstoneTools.addTool(CrosshairsTool);
+    cornerstoneTools.addTool(LengthTool);
+    cornerstoneTools.addTool(ProbeTool);
+    cornerstoneTools.addTool(RectangleROITool);
     toolGroup.addTool(PanTool.toolName);
     toolGroup.addTool(ZoomTool.toolName);
     toolGroup.addTool(StackScrollTool.toolName);
+    toolGroup.addTool(LengthTool.toolName);
+    toolGroup.addTool(ProbeTool.toolName);
+    toolGroup.addTool(RectangleROITool.toolName);
+    // Merge our color overrides onto the existing defaults — replacing wholesale would
+    // drop font/background/shadow defaults and the value labels would stop rendering.
+    const defaultStyles = annotation.config.style.getDefaultToolStyles();
+    annotation.config.style.setDefaultToolStyles({
+        ...defaultStyles,
+        global: { ...(defaultStyles.global ?? {}), ...MEASUREMENT_ANNOTATION_STYLE },
+    });
     toolGroup.addTool(CrosshairsTool.toolName, {
         getReferenceLineColor,
         getReferenceLineControllable,
@@ -200,6 +250,11 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     toolGroup.setToolActive(StackScrollTool.toolName, {
         bindings: [{ mouseButton: csToolsEnums.MouseBindings.Wheel }]
     })
+    // Measurement tools start passive: their annotations stay selectable/editable, but
+    // the primary button keeps driving the crosshair until the user picks a measure tool.
+    for (const toolName of MEASUREMENT_TOOL_NAMES) {
+        toolGroup.setToolPassive(toolName);
+    }
 
     renderingEngine.setViewports(viewportInputArray);
 
@@ -312,6 +367,39 @@ export function toggleCrosshairTool(enable: boolean) {
       bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
     });
   }
+}
+
+// Activate a measurement tool on the primary mouse button, or pass `null` to hand the
+// primary button back to navigation (the caller restores crosshair/pan afterwards).
+// While a measure tool is active we disable crosshair + pan so clicks draw, not navigate.
+export function setActiveMeasurementTool(toolName: MeasurementToolName | null) {
+  const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+  if (!toolGroup) return;
+  // Reset every measure tool to passive first (keeps existing annotations editable).
+  for (const name of MEASUREMENT_TOOL_NAMES) toolGroup.setToolPassive(name);
+  if (!toolName) return;
+  toolGroup.setToolDisabled(CrosshairsTool.toolName);
+  toolGroup.setToolDisabled(PanTool.toolName);
+  toolGroup.setToolActive(toolName, {
+    bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
+  });
+}
+
+// Remove only measurement annotations (Length/Probe/ROI), leaving the crosshair intact.
+export function clearMeasurements() {
+  try {
+    const all = annotation.state.getAllAnnotations() ?? [];
+    const names = MEASUREMENT_TOOL_NAMES as readonly string[];
+    for (const a of [...all]) {
+      const toolName = a?.metadata?.toolName;
+      if (toolName && names.includes(toolName) && a.annotationUID) {
+        annotation.state.removeAnnotation(a.annotationUID);
+      }
+    }
+  } catch {
+    /* annotation state may not be ready (e.g. before first render) — no-op */
+  }
+  currentRenderingEngine?.render();
 }
 
 export function setZoom(zoomValue: number){

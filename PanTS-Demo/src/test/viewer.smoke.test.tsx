@@ -26,6 +26,11 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	subscribeToCrosshairChanges: vi.fn(),
 	subscribeToVolumeProgress: vi.fn(() => () => {}),
 	toggleCrosshairTool: vi.fn(),
+	setActiveMeasurementTool: vi.fn(),
+	clearMeasurements: vi.fn(),
+	LENGTH_TOOL: "Length",
+	PROBE_TOOL: "Probe",
+	ROI_TOOL: "RectangleROI",
 }));
 
 vi.mock("../helpers/NiiVueNifti", () => ({

@@ -4,8 +4,12 @@ import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumePro
 import { Niivue } from "@niivue/niivue";
 import {
     IconChartBar,
+    IconClick,
     IconDownload, IconHome, IconPointer, IconReport,
-    IconSettings
+    IconRuler2,
+    IconSettings,
+    IconSquareDashed,
+    IconTrash
 } from "@tabler/icons-react";
 import React, { lazy, Suspense, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useParams } from "react-router-dom";
@@ -17,9 +21,15 @@ import SnakeGame from "../components/SnakeGame/SnakeGame";
 import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
+    clearMeasurements,
     getOrganLabelOnClick,
+    LENGTH_TOOL,
+    type MeasurementToolName,
     moveCornerstoneCrosshairToMm,
+    PROBE_TOOL,
     renderVisualization,
+    ROI_TOOL,
+    setActiveMeasurementTool,
     setToolGroupOpacity,
     setVisibilities,
     subscribeToCrosshairChanges,
@@ -156,6 +166,8 @@ function VisualizationPage() {
 	const [zoomMode, setZoomMode] = useState(false);
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
+	// Which measurement tool owns the primary mouse button (null = navigation/crosshair).
+	const [activeMeasureTool, setActiveMeasureTool] = useState<MeasurementToolName | null>(null);
 	const [viewMode, setViewMode] = useState<ViewMode>("mpr");
 	const [activePreset, setActivePreset] = useState<string>("Soft Tissue");
 	const [tooltip, setToolTip] = useState({
@@ -169,8 +181,24 @@ function VisualizationPage() {
 	// Load and render visualization on first render
 
 	useEffect(() => {
+		// A measurement tool, when active, owns the primary button — don't let the
+		// crosshair/pan toggle fight it for control.
+		if (activeMeasureTool) return;
 		toggleCrosshairTool(crosshairToolActive);
-	}, [crosshairToolActive]);
+	}, [crosshairToolActive, activeMeasureTool]);
+
+	// Hand the primary mouse button to the chosen measure tool, or back to navigation.
+	useEffect(() => {
+		if (activeMeasureTool) {
+			setActiveMeasurementTool(activeMeasureTool);
+		} else {
+			setActiveMeasurementTool(null);
+			toggleCrosshairTool(crosshairToolActive);
+		}
+		// crosshairToolActive intentionally omitted: the effect above re-applies nav when
+		// the crosshair/pan toggle changes; here we only react to the measure-tool switch.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeMeasureTool]);
 
 	// Track the CT download to show an accurate ETA while the case loads. We follow the
 	// largest-total stream (the CT volume, not the smaller segmentation) and derive the
@@ -634,12 +662,47 @@ function VisualizationPage() {
 
 										<div className="vp-toolrow">
 											<button
-												className={`vp-tool ${crosshairToolActive ? "vp-tool--active" : ""}`}
-												onClick={() => setCrosshairToolActive((prev) => !prev)}
+												className={`vp-tool ${crosshairToolActive && !activeMeasureTool ? "vp-tool--active" : ""}`}
+												onClick={() => {
+													setActiveMeasureTool(null);
+													setCrosshairToolActive((prev) => !prev);
+												}}
 												aria-label="Crosshair mode"
 											>
-												<IconPointer size={20} color={crosshairToolActive ? "#08090b" : "white"} />
+												<IconPointer size={20} color={crosshairToolActive && !activeMeasureTool ? "#08090b" : "white"} />
 												<span className="vp-tool__tip">Crosshair</span>
+											</button>
+											<button
+												className={`vp-tool ${activeMeasureTool === LENGTH_TOOL ? "vp-tool--active" : ""}`}
+												onClick={() => setActiveMeasureTool((p) => (p === LENGTH_TOOL ? null : LENGTH_TOOL))}
+												aria-label="Measure distance"
+											>
+												<IconRuler2 size={20} color={activeMeasureTool === LENGTH_TOOL ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Distance (mm)</span>
+											</button>
+											<button
+												className={`vp-tool ${activeMeasureTool === PROBE_TOOL ? "vp-tool--active" : ""}`}
+												onClick={() => setActiveMeasureTool((p) => (p === PROBE_TOOL ? null : PROBE_TOOL))}
+												aria-label="HU probe"
+											>
+												<IconClick size={20} color={activeMeasureTool === PROBE_TOOL ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">HU at point</span>
+											</button>
+											<button
+												className={`vp-tool ${activeMeasureTool === ROI_TOOL ? "vp-tool--active" : ""}`}
+												onClick={() => setActiveMeasureTool((p) => (p === ROI_TOOL ? null : ROI_TOOL))}
+												aria-label="Rectangle ROI"
+											>
+												<IconSquareDashed size={20} color={activeMeasureTool === ROI_TOOL ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">ROI · HU &amp; area</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={() => clearMeasurements()}
+												aria-label="Clear measurements"
+											>
+												<IconTrash size={20} color="white" />
+												<span className="vp-tool__tip">Clear measurements</span>
 											</button>
 											{/* <div className="group cursor-pointer rounded-md relative">
 													{!zoomMode ? (
