@@ -1,5 +1,5 @@
 import type { Color } from "@cornerstonejs/core/types";
-import { IconArrowLeft, IconCheck, IconChevronRight } from "@tabler/icons-react";
+import { IconArrowLeft, IconCheck, IconChevronRight, IconCurrentLocation } from "@tabler/icons-react";
 import React, { useEffect, useState } from "react";
 import {
 	MiscColorMap, OrganSystems,
@@ -21,6 +21,7 @@ type ChipBoxProps = {
 	checkState: boolean[];
 	level: number;
 	OrganSystem: OrganSystemsAllType;
+	onJumpToOrgan?: (label: number) => void;
 };
 
 type Props = {
@@ -31,6 +32,7 @@ type Props = {
 	setShowTaskDetails: React.Dispatch<React.SetStateAction<boolean>>;
 	setShowOrganDetails: React.Dispatch<React.SetStateAction<boolean>>;
 	showOrganDetails: boolean;
+	onJumpToOrgan?: (label: number) => void;
 };
 
 const getOrganIdx = (organ: string) => {
@@ -49,6 +51,7 @@ function Checked({
 	checkState,
 	setCheckState,
 	level = 0,
+	onJumpToOrgan,
 }: ChipBoxProps) {
 	const [collapsed, setCollapsed] = useState(false);
 	const [partialToggled, setPartialToggled] = useState(true);
@@ -188,6 +191,20 @@ function Checked({
 								>
 									{organ}
 								</div>
+								{onJumpToOrgan && (
+									<button
+										type="button"
+										className="vp-organs__jump"
+										title={`Jump to ${organ}`}
+										aria-label={`Jump to ${organ}`}
+										onClick={(e) => {
+											e.stopPropagation();
+											onJumpToOrgan(getOrganIdx(organ) + 1);
+										}}
+									>
+										<IconCurrentLocation size={15} />
+									</button>
+								)}
 							</div>
 						);
 					} else if (
@@ -205,6 +222,7 @@ function Checked({
 									checkState={checkState}
 									setCheckState={setCheckState}
 									level={level + 1}
+									onJumpToOrgan={onJumpToOrgan}
 								/>
 							</>
 						);
@@ -222,6 +240,7 @@ function OrganCheckbox({
 	setShowTaskDetails,
 	setShowOrganDetails,
 	showOrganDetails,
+	onJumpToOrgan,
 }: Props) {
 	const toggleAll = () => {
 		setCheckState((prev) => {
@@ -269,6 +288,7 @@ function OrganCheckbox({
 							labelColorMap={labelColorMap}
 							checkState={checkState}
 							setCheckState={setCheckState}
+							onJumpToOrgan={onJumpToOrgan}
 						/>
 					);
 				})}
