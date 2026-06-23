@@ -23,7 +23,12 @@ export default function CtPreview({ file }: { file: File }) {
 			if (!canvasRef.current) return;
 			try {
 				nv.attachToCanvas(canvasRef.current);
-				const nvImage = await NVImage.loadFromFile({ file });
+				// trustCalMinMax:false → ignore any narrow window/level baked into the file
+				// header and compute a robust (percentile) window from the data instead, so a
+				// few bright voxels (contrast-filled vessels, bone) don't clip the rest of the
+				// scan to black. Some exported CTs carry a header window that suits only their
+				// source view; this keeps the preview legible for any uploaded volume.
+				const nvImage = await NVImage.loadFromFile({ file, trustCalMinMax: false });
 				if (cancelled) return;
 				nv.addVolume(nvImage);
 				nv.setSliceType(SLICE_TYPE.MULTIPLANAR);
