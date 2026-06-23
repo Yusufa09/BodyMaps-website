@@ -97,7 +97,9 @@ export function subscribeToCrosshairChanges(cb: (mm: number[]) => void) {
 export function moveCornerstoneCrosshairToMm(mm: [number, number, number]) {
     const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
     if (!toolGroup) return;
-    const tool = toolGroup.getToolInstance(CrosshairsTool.toolName) as any;
+    const tool = toolGroup.getToolInstance(CrosshairsTool.toolName) as {
+        setToolCenter?: (mm: number[], suppressEvents?: boolean) => void;
+    };
     if (!tool?.setToolCenter) return;
     _isSyncing = true;
     try {
@@ -111,7 +113,9 @@ export function moveCornerstoneCrosshairToMm(mm: [number, number, number]) {
 // the focal point for a shareable link without waiting on a crosshair-change event.
 export function getCrosshairMm(): [number, number, number] | null {
     const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
-    const tool = toolGroup?.getToolInstance(CrosshairsTool.toolName) as any;
+    const tool = toolGroup?.getToolInstance(CrosshairsTool.toolName) as
+        | { toolCenter?: number[] }
+        | undefined;
     const c = tool?.toolCenter;
     if (!c || c.length < 3 || !c.every((n: number) => Number.isFinite(n))) return null;
     return [c[0], c[1], c[2]];

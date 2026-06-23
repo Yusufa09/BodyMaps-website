@@ -426,11 +426,14 @@ function VisualizationPage() {
 		});
 	};
 
-	// Apply window settings on change
+	// Apply window settings once the engine/viewports/volume are ready. Intentionally not
+	// keyed on windowWidth/Center/handleWindowChange — the slider already applies live
+	// changes; this just seeds the initial window after load.
 	useEffect(() => {
 		if (renderingEngine && viewportIds.length && volumeId) {
 			handleWindowChange(windowWidth, windowCenter);
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [renderingEngine, viewportIds, volumeId]);
 
 	// Apply a shared deep-link's view state once the volume is ready (orientation, window,
