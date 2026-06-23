@@ -106,6 +106,16 @@ export function moveCornerstoneCrosshairToMm(mm: [number, number, number]) {
         _isSyncing = false;
     }
 }
+
+// Current crosshair world position (mm), or null if the tool isn't ready. Used to capture
+// the focal point for a shareable link without waiting on a crosshair-change event.
+export function getCrosshairMm(): [number, number, number] | null {
+    const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+    const tool = toolGroup?.getToolInstance(CrosshairsTool.toolName) as any;
+    const c = tool?.toolCenter;
+    if (!c || c.length < 3 || !c.every((n: number) => Number.isFinite(n))) return null;
+    return [c[0], c[1], c[2]];
+}
 const viewportColors: Record<viewportIdTypes, string> = {
     [viewportId1]: 'rgb(200, 0, 0)',
     [viewportId2]: 'rgb(200, 200, 0)',
@@ -153,6 +163,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     coreInit();
     niftiImageLoaderInit();
     cornerstoneToolsInit();
+    _organCentroids = null; // recomputed lazily for the new case's segmentation
 
     const mainNiftiURL = ctUrl;
     const segmentationURL = segUrl;
@@ -475,4 +486,66 @@ export function getOrganLabelOnClick() {
     // })
     const idx = volume.voxelManager.getAtIJK(indices[0], indices[1], indices[2]);
     return idx;
+}
+
+// Centroid (world mm) of every segment label, from one pass over the labelmap. Cached for
+// the loaded case (reset in renderVisualization). Lets the UI jump the crosshair to an
+// organ. Returns null until the segmentation volume is available.
+let _organCentroids: Record<number, [number, number, number]> | null = null;
+
+export function getOrganCentroids(): Record<number, [number, number, number]> | null {
+    if (_organCentroids) return _organCentroids;
+    const volume = cache.getVolume(segmentationId);
+    const vm = volume?.voxelManager;
+    if (!volume || !vm) return null;
+
+    const [dimX, dimY] = vm.dimensions;
+    const sliceSize = dimX * dimY;
+    // Sum voxel indices (and count) per label, so we can take the mean = centroid.
+    const sums = new Map<number, { x: number; y: number; z: number; n: number }>();
+    const add = (label: number, i: number, j: number, k: number) => {
+        if (!label) return; // skip background (0)
+        let s = sums.get(label);
+        if (!s) { s = { x: 0, y: 0, z: 0, n: 0 }; sums.set(label, s); }
+        s.x += i; s.y += j; s.z += k; s.n++;
+    };
+
+    // The segmentation is image-backed, so getScalarData() may not hold one contiguous
+    // array. Prefer getCompleteScalarDataArray() (assembles the full volume), and fall back
+    // to forEach (which hands us IJK per voxel) if it isn't available.
+    let data: ArrayLike<number> | undefined;
+    try { data = vm.getCompleteScalarDataArray?.(); } catch { /* fall through */ }
+    if (data && data.length) {
+        for (let idx = 0; idx < data.length; idx++) {
+            const label = data[idx];
+            if (!label) continue;
+            const k = (idx / sliceSize) | 0;
+            const rem = idx - k * sliceSize;
+            const j = (rem / dimX) | 0;
+            add(label, rem - j * dimX, j, k);
+        }
+    } else {
+        vm.forEach((voxel) =>
+            add(Number(voxel.value), voxel.pointIJK[0], voxel.pointIJK[1], voxel.pointIJK[2])
+        );
+    }
+
+    const out: Record<number, [number, number, number]> = {};
+    for (const [label, s] of sums) {
+        // Mean voxel index → world mm via the volume's geometry (handles spacing/affine).
+        // indexToWorld returns the point (it doesn't reliably fill an out-param).
+        const w = volume.imageData?.indexToWorld([s.x / s.n, s.y / s.n, s.z / s.n]);
+        if (w) out[label] = [w[0], w[1], w[2]];
+    }
+    _organCentroids = out;
+    return out;
+}
+
+// Center all MPR planes on an organ by moving the crosshair to its centroid. Returns false
+// if the organ has no voxels in this scan (so the caller can ignore the click).
+export function jumpToOrgan(label: number): boolean {
+    const centroid = getOrganCentroids()?.[label];
+    if (!centroid) return false;
+    moveCornerstoneCrosshairToMm(centroid);
+    return true;
 }

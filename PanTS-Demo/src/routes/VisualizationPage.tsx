@@ -4,14 +4,17 @@ import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumePro
 import { Niivue } from "@niivue/niivue";
 import {
     IconChartBar,
+    IconCheck,
     IconClick,
     IconDownload, IconHome, IconPointer, IconReport,
     IconRuler2,
     IconSettings,
+    IconShare,
     IconSquareDashed,
     IconTrash
 } from "@tabler/icons-react";
 import React, { lazy, Suspense, useEffect, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
@@ -22,7 +25,9 @@ import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
 import {
     clearMeasurements,
+    getCrosshairMm,
     getOrganLabelOnClick,
+    jumpToOrgan,
     LENGTH_TOOL,
     type MeasurementToolName,
     moveCornerstoneCrosshairToMm,
@@ -37,6 +42,7 @@ import {
     toggleCrosshairTool
 } from "../helpers/CornerstoneNifti2";
 import { create3DVolume, moveNiiVueCrosshairToMm, updateVisibilities } from "../helpers/NiiVueNifti";
+import { decodeViewerState, encodeViewerState } from "../helpers/viewerShareState";
 import {
     API_BASE,
     APP_CONSTANTS,
@@ -61,6 +67,14 @@ const CT_PRESETS = [
 	{ name: "Lung", width: 1500, center: -600 },
 	{ name: "Liver", width: 150, center: 30 },
 ] as const;
+
+// Measurement tools shown inside the collapsible "Measure" flyout, so the toolbar isn't
+// crowded with one button per tool (matches the split-button pattern OHIF uses).
+const MEASURE_TOOLS: { name: MeasurementToolName; label: string; Icon: typeof IconRuler2 }[] = [
+	{ name: LENGTH_TOOL, label: "Distance (mm)", Icon: IconRuler2 },
+	{ name: PROBE_TOOL, label: "HU at point", Icon: IconClick },
+	{ name: ROI_TOOL, label: "ROI · HU & area", Icon: IconSquareDashed },
+];
 
 function VisualizationPage() {
 	// References and state
@@ -168,6 +182,28 @@ function VisualizationPage() {
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
 	// Which measurement tool owns the primary mouse button (null = navigation/crosshair).
 	const [activeMeasureTool, setActiveMeasureTool] = useState<MeasurementToolName | null>(null);
+	// Collapsible measurement-tools flyout (declutters the toolbar). The menu renders in a
+	// portal at a fixed position so it isn't clipped by the scrollable settings panel.
+	const [measureMenuOpen, setMeasureMenuOpen] = useState(false);
+	const [measureMenuPos, setMeasureMenuPos] = useState<{ top: number; left: number } | null>(null);
+	const measureGroupRef = useRef<HTMLDivElement>(null);
+	const measureBtnRef = useRef<HTMLButtonElement>(null);
+	const measureMenuRef = useRef<HTMLDivElement>(null);
+
+	const toggleMeasureMenu = () => {
+		setMeasureMenuOpen((open) => {
+			const next = !open;
+			if (next && measureBtnRef.current) {
+				const r = measureBtnRef.current.getBoundingClientRect();
+				setMeasureMenuPos({ top: r.top, left: r.right + 10 });
+			}
+			return next;
+		});
+	};
+	// Shareable-link state: brief "copied" confirmation, and a guard so a deep-link's view
+	// state is applied exactly once after the volume finishes loading.
+	const [shareCopied, setShareCopied] = useState(false);
+	const shareStateAppliedRef = useRef(false);
 	const [viewMode, setViewMode] = useState<ViewMode>("mpr");
 	const [activePreset, setActivePreset] = useState<string>("Soft Tissue");
 	const [tooltip, setToolTip] = useState({
@@ -186,6 +222,26 @@ function VisualizationPage() {
 		if (activeMeasureTool) return;
 		toggleCrosshairTool(crosshairToolActive);
 	}, [crosshairToolActive, activeMeasureTool]);
+
+	// Close the measurement flyout on an outside click, or when the panel scrolls/resizes
+	// (the portal menu is fixed-positioned, so it would otherwise detach from the button).
+	useEffect(() => {
+		if (!measureMenuOpen) return;
+		const onPointerDown = (e: globalThis.MouseEvent) => {
+			const t = e.target as Node;
+			if (measureGroupRef.current?.contains(t) || measureMenuRef.current?.contains(t)) return;
+			setMeasureMenuOpen(false);
+		};
+		const onReflow = () => setMeasureMenuOpen(false);
+		document.addEventListener("mousedown", onPointerDown);
+		window.addEventListener("scroll", onReflow, true);
+		window.addEventListener("resize", onReflow);
+		return () => {
+			document.removeEventListener("mousedown", onPointerDown);
+			window.removeEventListener("scroll", onReflow, true);
+			window.removeEventListener("resize", onReflow);
+		};
+	}, [measureMenuOpen]);
 
 	// Hand the primary mouse button to the chosen measure tool, or back to navigation.
 	useEffect(() => {
@@ -376,6 +432,79 @@ function VisualizationPage() {
 			handleWindowChange(windowWidth, windowCenter);
 		}
 	}, [renderingEngine, viewportIds, volumeId]);
+
+	// Apply a shared deep-link's view state once the volume is ready (orientation, window,
+	// opacity, hidden organs, crosshair). Runs a single time — after that the URL is just a
+	// snapshot and the user is free to change things.
+	useEffect(() => {
+		if (shareStateAppliedRef.current || loading) return;
+		if (!renderingEngine || !viewportIds.length || !volumeId) return;
+		shareStateAppliedRef.current = true;
+
+		const shared = decodeViewerState(new URLSearchParams(window.location.search));
+		if (shared.view) setViewMode(shared.view);
+		if (shared.ww != null && shared.wc != null) handleWindowChange(shared.ww, shared.wc);
+		if (shared.opacity != null) {
+			setOpacityValue(shared.opacity);
+			setToolGroupOpacity(shared.opacity);
+		}
+		if (shared.hidden?.length) {
+			// The checkState effect below applies the visibility change (Cornerstone + NiiVue).
+			setCheckState((prev) => {
+				const next = [...prev];
+				for (const id of shared.hidden!) if (id < next.length) next[id] = false;
+				return next;
+			});
+		}
+		// Move the crosshair last, after a paint, so the viewports are laid out and the
+		// reference lines land on the intended focal point.
+		if (shared.crosshair) {
+			requestAnimationFrame(() => moveCornerstoneCrosshairToMm(shared.crosshair!));
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [loading, renderingEngine, viewportIds, volumeId]);
+
+	// Build a shareable URL that reproduces the current view, and copy it to the clipboard.
+	const handleShare = async () => {
+		const hidden = checkState.reduce<number[]>((acc, visible, id) => {
+			if (id > 0 && !visible) acc.push(id);
+			return acc;
+		}, []);
+		const params = encodeViewerState({
+			view: viewMode,
+			ww: windowWidth,
+			wc: windowCenter,
+			opacity: opacityValue,
+			hidden,
+			crosshair: getCrosshairMm() ?? undefined,
+			hd: isHd,
+		});
+		const qs = params.toString();
+		const url = `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ""}`;
+		try {
+			await navigator.clipboard.writeText(url);
+		} catch {
+			// Clipboard blocked (e.g. insecure context) — fall back to a prompt so the link
+			// is still copyable by hand.
+			window.prompt("Copy this link to share the current view:", url);
+		}
+		setShareCopied(true);
+		window.setTimeout(() => setShareCopied(false), 1600);
+	};
+
+	// The Measure button shows the active tool's icon (or the ruler when none is active).
+	const ActiveMeasureIcon = MEASURE_TOOLS.find((t) => t.name === activeMeasureTool)?.Icon ?? IconRuler2;
+
+	// Center the MPR planes on an organ (from the sidebar), and make sure it's visible there.
+	const handleJumpToOrgan = (label: number) => {
+		if (!jumpToOrgan(label)) return; // organ not present in this scan
+		setCheckState((prev) => {
+			if (prev[label]) return prev;
+			const next = [...prev];
+			next[label] = true;
+			return next;
+		});
+	};
 
 	// Resize Cornerstone + NiiVue when view mode changes. resize(immediate, keepCamera):
 	// keepCamera defaults to true, which preserved the zoom/pan from a single (fullscreen)
@@ -672,37 +801,67 @@ function VisualizationPage() {
 												<IconPointer size={20} color={crosshairToolActive && !activeMeasureTool ? "#08090b" : "white"} />
 												<span className="vp-tool__tip">Crosshair</span>
 											</button>
+											<div className="vp-toolgroup" ref={measureGroupRef}>
+												<button
+													ref={measureBtnRef}
+													className={`vp-tool ${activeMeasureTool || measureMenuOpen ? "vp-tool--active" : ""}`}
+													onClick={toggleMeasureMenu}
+													aria-label="Measurement tools"
+													aria-haspopup="menu"
+													aria-expanded={measureMenuOpen}
+												>
+													<ActiveMeasureIcon size={20} color={activeMeasureTool || measureMenuOpen ? "#08090b" : "white"} />
+													<span className="vp-tool__caret" />
+													<span className="vp-tool__tip">Measure</span>
+												</button>
+												{measureMenuOpen && measureMenuPos &&
+													createPortal(
+														<div
+															className="vp-flyout"
+															role="menu"
+															ref={measureMenuRef}
+															style={{ position: "fixed", top: measureMenuPos.top, left: measureMenuPos.left }}
+														>
+															{MEASURE_TOOLS.map(({ name, label, Icon }) => (
+																<button
+																	key={name}
+																	className={`vp-flyout__item ${activeMeasureTool === name ? "is-active" : ""}`}
+																	role="menuitem"
+																	onClick={() => {
+																		setActiveMeasureTool((p) => (p === name ? null : name));
+																		setMeasureMenuOpen(false);
+																	}}
+																>
+																	<Icon size={18} />
+																	<span>{label}</span>
+																</button>
+															))}
+															<button
+																className="vp-flyout__item"
+																role="menuitem"
+																onClick={() => {
+																	clearMeasurements();
+																	setMeasureMenuOpen(false);
+																}}
+															>
+																<IconTrash size={18} />
+																<span>Clear measurements</span>
+															</button>
+														</div>,
+														document.body
+													)}
+											</div>
 											<button
-												className={`vp-tool ${activeMeasureTool === LENGTH_TOOL ? "vp-tool--active" : ""}`}
-												onClick={() => setActiveMeasureTool((p) => (p === LENGTH_TOOL ? null : LENGTH_TOOL))}
-												aria-label="Measure distance"
+												className={`vp-tool ${shareCopied ? "vp-tool--active" : ""}`}
+												onClick={handleShare}
+												aria-label="Copy a shareable link to this view"
 											>
-												<IconRuler2 size={20} color={activeMeasureTool === LENGTH_TOOL ? "#08090b" : "white"} />
-												<span className="vp-tool__tip">Distance (mm)</span>
-											</button>
-											<button
-												className={`vp-tool ${activeMeasureTool === PROBE_TOOL ? "vp-tool--active" : ""}`}
-												onClick={() => setActiveMeasureTool((p) => (p === PROBE_TOOL ? null : PROBE_TOOL))}
-												aria-label="HU probe"
-											>
-												<IconClick size={20} color={activeMeasureTool === PROBE_TOOL ? "#08090b" : "white"} />
-												<span className="vp-tool__tip">HU at point</span>
-											</button>
-											<button
-												className={`vp-tool ${activeMeasureTool === ROI_TOOL ? "vp-tool--active" : ""}`}
-												onClick={() => setActiveMeasureTool((p) => (p === ROI_TOOL ? null : ROI_TOOL))}
-												aria-label="Rectangle ROI"
-											>
-												<IconSquareDashed size={20} color={activeMeasureTool === ROI_TOOL ? "#08090b" : "white"} />
-												<span className="vp-tool__tip">ROI · HU &amp; area</span>
-											</button>
-											<button
-												className="vp-tool"
-												onClick={() => clearMeasurements()}
-												aria-label="Clear measurements"
-											>
-												<IconTrash size={20} color="white" />
-												<span className="vp-tool__tip">Clear measurements</span>
+												{shareCopied ? (
+													<IconCheck size={20} color="#08090b" />
+												) : (
+													<IconShare size={20} color="white" />
+												)}
+												<span className="vp-tool__tip">{shareCopied ? "Link copied!" : "Share this view"}</span>
 											</button>
 											{/* <div className="group cursor-pointer rounded-md relative">
 													{!zoomMode ? (
@@ -893,6 +1052,7 @@ function VisualizationPage() {
 				setShowOrganDetails={setShowOrganDetails}
 				showOrganDetails={showOrganDetails}
 				labelColorMap={labelColorMap}
+				onJumpToOrgan={handleJumpToOrgan}
 			/>
 
 			{showStats && (
