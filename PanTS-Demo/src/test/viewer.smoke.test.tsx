@@ -28,6 +28,8 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	toggleCrosshairTool: vi.fn(),
 	setActiveMeasurementTool: vi.fn(),
 	clearMeasurements: vi.fn(),
+	getCrosshairMm: vi.fn(() => null),
+	jumpToOrgan: vi.fn(() => false),
 	LENGTH_TOOL: "Length",
 	PROBE_TOOL: "Probe",
 	ROI_TOOL: "RectangleROI",
