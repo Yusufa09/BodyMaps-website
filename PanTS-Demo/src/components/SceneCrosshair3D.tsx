@@ -25,6 +25,20 @@ function makeLineGeometry(a: Vec3, b: Vec3) {
     return geometry;
 }
 
+function makeLine(
+  a: Vec3,
+  b: Vec3,
+  material: THREE.LineBasicMaterial
+) {
+  const geometry = makeLineGeometry(a, b);
+  const line = new THREE.Line(geometry, material);
+
+  line.renderOrder = 999;
+  line.frustumCulled = false;
+
+  return line;
+}
+
 export function SceneCrosshair3D({
     position,
     bounds,
@@ -53,50 +67,33 @@ export function SceneCrosshair3D({
      *   z varies
      *   x,y fixed
      */
-    const xLineGeometry = useMemo(() => {
-        return makeLineGeometry([minX, y, z], [maxX, y, z]);
-    }, [minX, maxX, y, z]);
-
-    const yLineGeometry = useMemo(() => {
-        return makeLineGeometry([x, minY, z], [x, maxY, z]);
-    }, [x, minY, maxY, z]);
-
-    const zLineGeometry = useMemo(() => {
-        return makeLineGeometry([x, y, minZ], [x, y, maxZ]);
-    }, [x, y, minZ, maxZ]);
-
     const material = useMemo(() => {
-        return new THREE.LineBasicMaterial({
-            color: "white",
-            depthTest: false,
-            depthWrite: false,
-            transparent: true,
-            opacity: 1,
-        });
-    }, []);
+    return new THREE.LineBasicMaterial({
+      color: "white",
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
+    });
+  }, []);
+
+    const xLine = useMemo(() => {
+    return makeLine([minX, y, z], [maxX, y, z], material);
+    }, [minX, maxX, y, z, material]);
+
+    const yLine = useMemo(() => {
+        return makeLine([x, minY, z], [x, maxY, z], material);
+    }, [x, minY, maxY, z, material]);
+
+    const zLine = useMemo(() => {
+        return makeLine([x, y, minZ], [x, y, maxZ], material);
+    }, [x, y, minZ, maxZ, material]);
 
     return (
-        <group renderOrder={999} frustumCulled={false}>
-            <line
-                geometry={xLineGeometry}
-                material={material}
-                renderOrder={999}
-                frustumCulled={false}
-            />
-
-            <line
-                geometry={yLineGeometry}
-                material={material}
-                renderOrder={999}
-                frustumCulled={false}
-            />
-
-            <line
-                geometry={zLineGeometry}
-                material={material}
-                renderOrder={999}
-                frustumCulled={false}
-            />
+        <group renderOrder={999}>
+        <primitive object={xLine} />
+        <primitive object={yLine} />
+        <primitive object={zLine} />
         </group>
     );
 }

@@ -50,7 +50,7 @@ import {
 } from "../helpers/CornerstoneNifti2";
 import { filenameToName, getPanTSId } from "../helpers/utils";
 import { decodeViewerState, encodeViewerState } from "../helpers/viewerShareState";
-import { type CheckBoxData, type NColorMap } from "../types";
+import { type CheckBoxData } from "../types";
 import "./VisualizationPage.css";
 
 type ViewMode = "mpr" | "axial" | "sagittal" | "coronal" | "3d";
@@ -139,7 +139,7 @@ function VisualizationPage() {
 	const sagittal_ref = useRef<HTMLDivElement>(null);
 	const coronal_ref = useRef<HTMLDivElement>(null);
 	const render_ref = useRef<HTMLCanvasElement>(null);
-	const cmapRef = useRef<NColorMap>(null);
+	// const _cmapRef = useRef<NColorMap>(null);
 	// const TaskMenu_ref = useRef(null);
 	const VisualizationContainer_ref = useRef(null);
 	//   const lastClickInfoRef = useRef(null);
@@ -149,7 +149,7 @@ function VisualizationPage() {
 	//   const [sliceCoronal, setSliceCoronal] = useState(0);
 	const [checkState, setCheckState] = useState<boolean[]>([true]);
 	useState<string[] | null>(null);
-	const [NV, setNV] = useState<Niivue | undefined>();
+	const [NV, _setNV] = useState<Niivue | undefined>();
 	const [sessionKey, _setSessionKey] = useState<string | undefined>(undefined);
 	const [checkBoxData, setCheckBoxData] = useState<CheckBoxData[]>([]);
 	const [opacityValue, setOpacityValue] = useState(
@@ -207,7 +207,7 @@ function VisualizationPage() {
 	const shareStateAppliedRef = useRef(false);
 	const [viewMode, setViewMode] = useState<ViewMode>("mpr");
 	const [activePreset, setActivePreset] = useState<string>("Soft Tissue");
-	const [tooltip, setToolTip] = useState({
+	const [_tooltip, setToolTip] = useState({
 		visible: false,
 		x: 0,
 		y: 0,

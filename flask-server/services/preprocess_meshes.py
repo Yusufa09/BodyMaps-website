@@ -241,7 +241,7 @@ def preprocess_case(display_id: str, label_nifti_path: str, output_root: str):
                 "id": label_id,
                 "key": meta["key"],
                 "name": meta["name"],
-                "url": f"{os.getenv('API_ORIGIN', 'http://localhost:5001')}/api/cases/{display_id}/render_only/{out_name}",
+                "url": f"{os.getenv('API_ORIGIN', 'http://localhost:5001')}/api/cases/{display_id}/meshes/{out_name}",
                 "vertices": stats["vertices"],
                 "faces": stats["faces"],
             }

@@ -14,10 +14,10 @@ const browserHost = hasWindow ? window.location.hostname : "";
 const isBrowserLocalhost = browserHost === "localhost" || browserHost === "127.0.0.1";
 const apiBaseLooksLocalhost = /https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(configuredApiBase);
 
-// export const API_BASE = configuredApiBase
-// 	? (apiBaseLooksLocalhost && !isBrowserLocalhost ? "" : configuredApiBase.replace(/\/$/, ""))
-	// : "";
-export const API_BASE = "http://localhost:5001";
+export const API_BASE = configuredApiBase
+	? (apiBaseLooksLocalhost && !isBrowserLocalhost ? "" : configuredApiBase.replace(/\/$/, ""))
+	: "";
+// export const API_BASE = "http://localhost:5001";
 
 // old
 // const x = {

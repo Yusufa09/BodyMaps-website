@@ -425,7 +425,7 @@ async def get_specific_segmentations(combined_labels_id):
 async def get_segmentations(combined_labels_id):
     nifti_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(combined_labels_id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
     labels = list(Constants.PREDEFINED_LABELS.values())
-
+    print("xdjs")
     # ?res=low → serve the precomputed low-res mask (paired with the low-res CT so the
     # overlay stays aligned). Falls back to full res below if it hasn't been generated.
     if (request.args.get('res') or '').strip().lower() == 'low':
@@ -438,13 +438,9 @@ async def get_segmentations(combined_labels_id):
             return response
 
     img = nib.load(nifti_path)
-    data = img.get_fdata()
-    if img.get_data_dtype() != np.uint8:
-        print("⚠️ Detected float label map, converting to uint8 for Cornerstone compatibility...")
+    print("⚠️ Detected float label map, converting to uint8 for Cornerstone compatibility...")
 
     try:
-        img = nib.load(nifti_path)
-
         if img.get_data_dtype() != np.uint8:
             raw = np.asanyarray(img.dataobj)
 
@@ -457,8 +453,6 @@ async def get_segmentations(combined_labels_id):
 
             converted_path = nifti_path
             nib.save(new_img, converted_path)
-        # else:
-        #     converted_path = nifti_path
 
         response = make_response(send_file(nifti_path, mimetype='application/gzip'))
         response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
