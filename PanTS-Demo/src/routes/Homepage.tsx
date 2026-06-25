@@ -1,19 +1,16 @@
 import {
 	IconAdjustmentsHorizontal,
 	IconArrowsShuffle,
-	IconAtom,
 	IconBookmark,
-	IconBuildingHospital,
 	IconChevronDown,
 	IconDatabase,
-	IconStack2,
 	IconX,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import Preview from "../components/Preview";
-import { API_BASE, segmentation_categories } from "../helpers/constants";
+import { API_BASE } from "../helpers/constants";
 import {
 	buildSearchParams,
 	countActiveFilters,
@@ -56,14 +53,6 @@ const CARD_COUNT = 8;
 // 4 columns × 4 rows = 16 cards per page.
 const PER_PAGE = 16;
 
-const STATS = [
-	{ label: "CT Volumes", value: "36,390", icon: IconDatabase },
-	{ label: "Medical Centers", value: "145", icon: IconBuildingHospital },
-	{ label: "Annotated Structures", value: "993K+", icon: IconStack2 },
-	// Derived from the viewer's actual label set so it can't drift out of sync.
-	{ label: "Organ Classes", value: String(segmentation_categories.length), icon: IconAtom },
-];
-
 const TUMOR_OPTIONS: { value: TumorFilter; label: string }[] = [
 	{ value: "any", label: "Any" },
 	{ value: "tumor", label: "Tumor" },
@@ -98,8 +87,8 @@ const pillStyle = (active: boolean): React.CSSProperties => ({
 	fontSize: "13px",
 	fontWeight: 600,
 	cursor: "pointer",
-	border: active ? "1px solid #111111" : "1px solid rgba(0,0,0,0.08)",
-	background: active ? "#111111" : "rgba(0,0,0,0.04)",
+	border: active ? "1px solid #002D72" : "1px solid rgba(0,0,0,0.08)",
+	background: active ? "#002D72" : "rgba(0,0,0,0.04)",
 	color: active ? "#ffffff" : "rgba(0,0,0,0.6)",
 	transition: "all 0.15s",
 	outline: "none",
@@ -462,44 +451,6 @@ export default function Homepage() {
 
 			<Header />
 
-			{/* Stats bar */}
-			<div
-				style={{
-					borderBottom: "1px solid rgba(0,0,0,0.05)",
-				}}
-			>
-				<div className="mx-auto max-w-6xl grid grid-cols-4 px-6">
-					{STATS.map(({ label, value }, i) => (
-						<div
-							key={label}
-							className="flex flex-col px-8 py-5"
-							style={{
-								borderLeft: i > 0 ? "1px solid rgba(0,0,0,0.07)" : "none",
-							}}
-						>
-							<div
-								className="font-bold tabular-nums text-black leading-none"
-								style={{ fontSize: "28px", letterSpacing: "-0.02em" }}
-							>
-								{value}
-							</div>
-							<div
-								className="font-medium mt-2"
-								style={{
-									fontFamily: "'JetBrains Mono', monospace",
-									fontSize: "10px",
-									color: "rgba(0,0,0,0.35)",
-									letterSpacing: "0.14em",
-									textTransform: "uppercase",
-								}}
-							>
-								{label}
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
-
 			{/* Case library */}
 			<section className="mx-auto max-w-6xl px-6 pt-8 pb-16">
 				<div
@@ -658,7 +609,7 @@ export default function Homepage() {
 								{activeFilterCount > 0 && (
 									<span
 										style={{
-											background: "#111111",
+											background: "#002D72",
 											color: "#ffffff",
 											fontSize: "10px",
 											fontWeight: 700,
@@ -687,7 +638,7 @@ export default function Homepage() {
 						<button
 							style={{
 								padding: "10px 32px",
-								background: "#000000",
+								background: "#002D72",
 								border: "none",
 								borderRadius: "8px",
 								color: "#ffffff",
@@ -889,7 +840,7 @@ export default function Homepage() {
 										onClick={handleApplyFilters}
 										style={{
 											padding: "9px 24px",
-											background: "#000000",
+											background: "#002D72",
 											border: "none",
 											borderRadius: "8px",
 											color: "#ffffff",
