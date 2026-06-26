@@ -24,15 +24,17 @@ export default function LandingPage() {
   const [organClasses, setOrganClasses] = useState(0);
 
   /* ── active tab ── */
-  const [activeTab, setActiveTab] = useState<"overview" | "dataset" | "upload">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "dataset" | "upload" | "team">("overview");
 
   /* ── tab navigation handler ── */
-  const handleTabClick = (tab: "overview" | "dataset" | "upload") => {
+  const handleTabClick = (tab: "overview" | "dataset" | "upload" | "team") => {
     setActiveTab(tab);
     if (tab === "dataset") {
       navigate("/dashboard");
     } else if (tab === "upload") {
       navigate("/upload");
+    } else if (tab === "team") {
+      navigate("/team");
     }
     // "overview" stays on the landing page — no navigation needed
   };
@@ -72,20 +74,8 @@ export default function LandingPage() {
       <nav className={styles.nav}>
         {/* Logo */}
         <div className={styles.logoPill} onClick={() => handleTabClick("overview")}>
-          <div className={styles.logoIcon}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111111" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="12" cy="12" r="4" />
-              <line x1="12" y1="2" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22" />
-              <line x1="2" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22" y2="12" />
-            </svg>
-          </div>
-          <div>
-            <div className={styles.logoTitle}>BodyMaps</div>
-            <div className={styles.logoSubtitle}>CT Segmentation Platform</div>
-          </div>
+          <img src="/bodymaps-logo.svg" alt="" className={styles.logoImg} />
+          <div className={styles.logoTitle}>BodyMaps</div>
         </div>
 
         {/* Center Tabs */}
@@ -99,6 +89,9 @@ export default function LandingPage() {
           <button className={tabClass("upload")} onClick={() => handleTabClick("upload")}>
             UPLOAD
           </button>
+          <button className={tabClass("team")} onClick={() => handleTabClick("team")}>
+            TEAM
+          </button>
         </div>
 
         {/* Spacer for balance */}
@@ -107,7 +100,7 @@ export default function LandingPage() {
 
       {/* ═══════ CENTERED HERO ═══════ */}
       <main className={styles.hero}>
-        <h1 className={styles.heroTitle}>BodyMaps</h1>
+        <h1 className={styles.heroTitle}>Body<span className={styles.heroTitleAlt}>Maps</span></h1>
         <p className={styles.heroSubtitle}>The open library of labeled body CT scans</p>
 
         <div className={styles.heroStats}>
@@ -127,7 +120,7 @@ export default function LandingPage() {
             Browse Dataset
           </button>
           <button className={styles.btnSecondary} onClick={() => handleTabClick("upload")}>
-            Upload CT
+            Upload Dataset
           </button>
         </div>
       </main>

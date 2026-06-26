@@ -5,6 +5,7 @@ import { AnnotationProvider } from "./contexts/annotationContexts";
 import { FileProvider } from "./contexts/fileContexts";
 import LandingPage from "./pages/LandingPage";
 import Homepage from "./routes/Homepage";
+import TeamPage from "./routes/TeamPage";
 
 // The viewer routes pull in the WebGL stack (NiiVue + Cornerstone + three.js), which
 // is the bulk of the JS bundle. Code-split them so the landing + dataset pages don't
@@ -61,6 +62,7 @@ function App() {
 								<Route path="/reconstruction/:reconstructionId" element={<VisualizationPage />} />
 								<Route path="/test" element={<RotatingHeartLoader />} />
 								<Route path="/upload" element={<UploadPage />} />
+									<Route path="/team" element={<TeamPage />} />
 							</Routes>
 						</Suspense>
 					</BrowserRouter>

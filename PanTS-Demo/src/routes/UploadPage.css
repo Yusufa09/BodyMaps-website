@@ -10,6 +10,7 @@
 .upload-page-wrapper {
   min-height: 100vh;
   background: #ffffff;
+
   color: #111111;
   font-family: 'Space Grotesk', sans-serif;
   position: relative;
@@ -177,7 +178,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #000000;
+  background: #002D72;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -255,8 +256,8 @@
 .run-btn {
   flex-shrink: 0;
   padding: 10px 32px;
-  background: #000000;
-  border: 1px solid #000000;
+  background: #002D72;
+  border: 1px solid #002D72;
   border-radius: 8px;
   color: #ffffff;
   font-family: 'Space Grotesk', sans-serif;
@@ -267,8 +268,8 @@
   letter-spacing: 0.02em;
 }
 .run-btn:hover:not(:disabled) {
-  background: #111111;
-  border-color: #111111;
+  background: #00399a;
+  border-color: #00399a;
   color: #ffffff;
 }
 .run-btn:disabled {
@@ -400,10 +401,10 @@
   transition: width 0.4s cubic-bezier(.2,.8,.2,1);
 }
 .progress-fill-upload {
-  background: linear-gradient(90deg, #8f8f8f, #000000);
+  background: linear-gradient(90deg, #8f8f8f, #002D72);
 }
 .progress-fill-inference {
-  background: linear-gradient(90deg, #6a6a6a, #111111);
+  background: linear-gradient(90deg, #6a6a6a, #00399a);
 }
 
 /* ── Result actions ── */
@@ -446,13 +447,13 @@
   color: #fff;
 }
 .result-btn-primary {
-  background: #000000;
-  border-color: #000000;
+  background: #002D72;
+  border-color: #002D72;
   color: #ffffff;
 }
 .result-btn-primary:hover {
-  background: #111111;
-  border-color: #111111;
+  background: #00399a;
+  border-color: #00399a;
   color: #ffffff;
 }
 

@@ -6,6 +6,7 @@ const TABS = [
 	{ id: "overview", label: "Overview", path: "/" },
 	{ id: "dataset", label: "Dataset", path: "/dashboard" },
 	{ id: "upload", label: "Upload", path: "/upload" },
+	{ id: "team", label: "Team", path: "/team" },
 ] as const;
 
 export default function Header() {
@@ -29,20 +30,8 @@ export default function Header() {
 		>
 			{/* Logo */}
 			<div className={styles.logoPill} onClick={() => navigate("/dashboard")}>
-				<div className={styles.logoIcon}>
-					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111111" strokeWidth="2">
-						<circle cx="12" cy="12" r="10" />
-						<circle cx="12" cy="12" r="4" />
-						<line x1="12" y1="2" x2="12" y2="4" />
-						<line x1="12" y1="20" x2="12" y2="22" />
-						<line x1="2" y1="12" x2="4" y2="12" />
-						<line x1="20" y1="12" x2="22" y2="12" />
-					</svg>
-				</div>
-				<div>
-					<div className={styles.logoTitle}>BodyMaps</div>
-					<div className={styles.logoSubtitle}>CT Segmentation Platform</div>
-				</div>
+				<img src="/bodymaps-logo.svg" alt="" className={styles.logoImg} />
+				<div className={styles.logoTitle}>BodyMaps</div>
 			</div>
 
 			{/* Center Tabs */}
