@@ -33,8 +33,8 @@ import {
 import {
     clearMeasurements,
     getCrosshairMm,
+    getOrganCentroids,
     getOrganLabelOnClick,
-    jumpToOrgan,
     LENGTH_TOOL,
     moveCornerstoneCrosshairToMm,
     PROBE_TOOL,
@@ -48,6 +48,7 @@ import {
     toggleCrosshairTool,
     type MeasurementToolName
 } from "../helpers/CornerstoneNifti2";
+import { moveNiiVueCrosshairToMm } from "../helpers/NiiVueNifti";
 import { filenameToName, getPanTSId } from "../helpers/utils";
 import { decodeViewerState, encodeViewerState } from "../helpers/viewerShareState";
 import { type CheckBoxData } from "../types";
@@ -513,9 +514,14 @@ function VisualizationPage() {
 	// The Measure button shows the active tool's icon (or the ruler when none is active).
 	const ActiveMeasureIcon = MEASURE_TOOLS.find((t) => t.name === activeMeasureTool)?.Icon ?? IconRuler2;
 
-	// Center the MPR planes on an organ (from the sidebar), and make sure it's visible there.
+	// Center on an organ (from the sidebar): move both the 2D MPR crosshair and the 3D
+	// (NiiVue) crosshair — the Cornerstone move suppresses its change event, so the 3D
+	// view has to be synced explicitly — and make sure the organ is visible there.
 	const handleJumpToOrgan = (label: number) => {
-		if (!jumpToOrgan(label)) return; // organ not present in this scan
+		const centroid = getOrganCentroids()?.[label];
+		if (!centroid) return; // organ not present in this scan
+		moveCornerstoneCrosshairToMm(centroid);
+		if (NV) moveNiiVueCrosshairToMm(NV, centroid);
 		setCheckState((prev) => {
 			if (prev[label]) return prev;
 			const next = [...prev];

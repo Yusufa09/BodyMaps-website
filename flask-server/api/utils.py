@@ -324,7 +324,7 @@ def generate_pdf_with_template(
                 return "N/A" if pd.isna(val) else val
             return default
         
-        wb = load_workbook(os.path.join(Constants.PANTS_PATH, "data", "metadata.xlsx"))
+        wb = load_workbook(os.path.join(Constants.PANTS_PATH, "metadata.xlsx"))
         sheet = wb["PanTS_metadata"]
         age = None
         sex = "-"
@@ -768,7 +768,7 @@ async def store_files(combined_labels_id):
         mask_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(combined_labels_id)}/segmentations/{label}.nii.gz"
         download(mask_url, mask_path)
         
-META_FILE = f"{Constants.PANTS_PATH}/data/metadata.xlsx"
+META_FILE = f"{Constants.PANTS_PATH}/metadata.xlsx"
 # ---------------------------
 # Helpers
 # ---------------------------

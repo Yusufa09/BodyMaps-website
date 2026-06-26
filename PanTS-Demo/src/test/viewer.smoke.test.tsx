@@ -29,7 +29,7 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	setActiveMeasurementTool: vi.fn(),
 	clearMeasurements: vi.fn(),
 	getCrosshairMm: vi.fn(() => null),
-	jumpToOrgan: vi.fn(() => false),
+	getOrganCentroids: vi.fn(() => null),
 	LENGTH_TOOL: "Length",
 	PROBE_TOOL: "Probe",
 	ROI_TOOL: "RectangleROI",

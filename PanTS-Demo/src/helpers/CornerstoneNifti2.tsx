@@ -568,12 +568,3 @@ export function getOrganCentroids(): Record<number, [number, number, number]> | 
     _organCentroids = out;
     return out;
 }
-
-// Center all MPR planes on an organ by moving the crosshair to its centroid. Returns false
-// if the organ has no voxels in this scan (so the caller can ignore the click).
-export function jumpToOrgan(label: number): boolean {
-    const centroid = getOrganCentroids()?.[label];
-    if (!centroid) return false;
-    moveCornerstoneCrosshairToMm(centroid);
-    return true;
-}

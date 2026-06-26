@@ -189,14 +189,14 @@ function Checked({
 										});
 									}}
 								>
-									{organ}
+									{organ.replaceAll('_', ' ')}
 								</div>
 								{onJumpToOrgan && (
 									<button
 										type="button"
 										className="vp-organs__jump"
-										title={`Jump to ${organ}`}
-										aria-label={`Jump to ${organ}`}
+										title={`Jump to ${organ.replaceAll('_', ' ')}`}
+										aria-label={`Jump to ${organ.replaceAll('_', ' ')}`}
 										onClick={(e) => {
 											e.stopPropagation();
 											onJumpToOrgan(getOrganIdx(organ) + 1);

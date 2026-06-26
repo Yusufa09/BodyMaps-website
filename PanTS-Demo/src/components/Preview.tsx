@@ -7,9 +7,11 @@ import type { PreviewType } from "../types";
 type Props = {
 	id: number;
 	previewMetadata: PreviewType;
+	saved?: boolean;
+	onToggleSave?: () => void;
 };
 
-export default function Preview({ id, previewMetadata }: Props) {
+export default function Preview({ id, previewMetadata, saved = false, onToggleSave }: Props) {
 	const navigate = useNavigate();
 	const [imgLoaded, setImgLoaded] = useState(false);
 	const [imgError, setImgError] = useState(false);
@@ -131,6 +133,50 @@ export default function Preview({ id, previewMetadata }: Props) {
 						}}
 					/>
 				))}
+
+				{/* Bookmark toggle — always visible once saved, otherwise reveals on hover */}
+				{onToggleSave && (saved || hovered) && (
+					<button
+						type="button"
+						aria-label={saved ? `Remove case ${id} from saved` : `Save case ${id}`}
+						title={saved ? "Saved — click to remove" : "Save case"}
+						onClick={(e) => {
+							e.stopPropagation();
+							onToggleSave();
+						}}
+						className="absolute flex items-center justify-center"
+						style={{
+							top: "8px",
+							right: "8px",
+							width: "30px",
+							height: "30px",
+							padding: 0,
+							borderRadius: "8px",
+							border: "none",
+							outline: "none",
+							cursor: "pointer",
+							zIndex: 2,
+							background: "rgba(0,0,0,0.45)",
+							transition: "background 0.15s",
+						}}
+						onMouseEnter={(e) => {
+							(e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.72)";
+						}}
+						onMouseLeave={(e) => {
+							(e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)";
+						}}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							aria-hidden="true"
+							style={{ display: "block", fill: saved ? "#facc15" : "rgba(255,255,255,0.92)", stroke: "none" }}
+						>
+							<path d="M6 2a1 1 0 0 0-1 1v18l7-4 7 4V3a1 1 0 0 0-1-1H6z" />
+						</svg>
+					</button>
+				)}
 			</div>
 
 			{/* Data row */}

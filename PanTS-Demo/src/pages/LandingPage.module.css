@@ -11,10 +11,12 @@
 }
 
 /* ---------- Root container ---------- */
+/* Theme: JHU Heritage Blue (#002D72) primary, Spirit Blue (#68ACE5) accent bars. */
 .root {
   position: fixed;
   inset: 0;
   background: #ffffff;
+
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -37,6 +39,12 @@
   align-items: center;
   gap: 12px;
   cursor: pointer;
+}
+.logoImg {
+  width: 38px;
+  height: 38px;
+  display: block;
+  border-radius: 11px;
 }
 .logoIcon {
   width: 38px;
@@ -90,9 +98,9 @@
   color: #111111;
 }
 .tabPillActive {
-  background: #000000;
+  background: #002D72;
   color: #ffffff;
-  border-color: #000000;
+  border-color: #002D72;
 }
 .navSpacer {
   width: 200px;
@@ -119,10 +127,13 @@
 .heroTitle {
   font-size: clamp(64px, 12vw, 132px);
   font-weight: 700;
-  color: #000000;
+  color: #002D72;
   letter-spacing: -0.04em;
   line-height: 1;
   margin: 0;
+}
+.heroTitleAlt {
+  color: #111111;
 }
 .heroSubtitle {
   font-size: clamp(20px, 2.4vw, 30px);
@@ -149,7 +160,7 @@
 .heroStatValue {
   font-size: 34px;
   font-weight: 700;
-  color: #000000;
+  color: #002D72;
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
@@ -182,14 +193,14 @@
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  background: #000000;
+  background: #002D72;
   color: #ffffff;
-  border: 1px solid #000000;
+  border: 1px solid #002D72;
   transition: all 0.2s ease;
 }
 .btnPrimary:hover {
-  background: #111111;
-  border-color: #111111;
+  background: #00399a;
+  border-color: #00399a;
   transform: translateY(-1px);
 }
 .btnSecondary {
@@ -200,13 +211,13 @@
   font-weight: 600;
   cursor: pointer;
   background: transparent;
-  color: #111111;
-  border: 1px solid rgba(0,0,0,.14);
+  color: #002D72;
+  border: 1px solid rgba(0,45,114,.35);
   transition: all 0.2s ease;
 }
 .btnSecondary:hover {
-  background: rgba(0,0,0,.05);
-  border-color: rgba(0,0,0,.28);
+  background: rgba(0,45,114,.06);
+  border-color: rgba(0,45,114,.55);
   transform: translateY(-1px);
 }
 

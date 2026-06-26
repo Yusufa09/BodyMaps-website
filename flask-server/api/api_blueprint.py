@@ -37,7 +37,7 @@ last_session_check = datetime.now()
 
 def _load_metadata_cache():
     try:
-        xlsx_path = os.path.join(Constants.PANTS_PATH, "data", "metadata.xlsx")
+        xlsx_path = os.path.join(Constants.PANTS_PATH, "metadata.xlsx")
         df = pd.read_excel(xlsx_path, engine="openpyxl")
         cache = {}
         for _, row in df.iterrows():
