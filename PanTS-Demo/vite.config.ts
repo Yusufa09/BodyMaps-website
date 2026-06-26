@@ -14,6 +14,9 @@ export default defineConfig({
 	resolve: {
 		extensions: ['.js', '.jsx', '.ts', '.tsx', '.json', '.wasm'], // add .wasm
 	},
+	build: {
+		target: "esnext",
+	},
 	assetsInclude: ['**/*.wasm'],
 	server: {
 		// https: {
