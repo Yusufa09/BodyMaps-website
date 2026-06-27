@@ -65,7 +65,7 @@ const CT_PRESETS = [
 	{ name: "Soft Tissue", width: 400, center: 40 },
 	{ name: "Bone", width: 1800, center: 400 },
 	{ name: "Lung", width: 1500, center: -600 },
-	{ name: "Liver", width: 150, center: 30 },
+	{ name: "Liver", width: 150, center: -50 }, // Brightness 50 (= -center), Contrast 150 (= width)
 ] as const;
 
 // Measurement tools shown inside the collapsible "Measure" flyout, so the toolbar isn't
