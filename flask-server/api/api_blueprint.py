@@ -159,7 +159,7 @@ from openpyxl import load_workbook
 
 
 SESSIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "tmp")
-PDF_DIR = f"{Constants.PDF_DIR}/pdf"
+PDF_DIR = f"{Constants.PERMISSIONS_DIR}/pdf"
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 os.makedirs(PDF_DIR, exist_ok=True)
 
