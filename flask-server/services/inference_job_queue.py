@@ -7,7 +7,13 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from contextlib import contextmanager
-import fcntl
+try:
+    import fcntl
+except ModuleNotFoundError:
+    fcntl = None
+    import msvcrt
+else:
+    msvcrt = None
 
 
 class InferenceJobQueue:
@@ -21,15 +27,27 @@ class InferenceJobQueue:
         os.makedirs(self.inputs_dir, exist_ok=True)
         os.makedirs(self.results_dir, exist_ok=True)
         open(self.lock_path, "a").close()
+        if os.path.getsize(self.lock_path) == 0:
+            with open(self.lock_path, "wb") as f:
+                f.write(b"0")
 
     @contextmanager
     def _locked(self):
-        with open(self.lock_path, "r+") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        with open(self.lock_path, "r+b") as lock_file:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            else:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+
             try:
                 yield
             finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                else:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
 
     def _job_path(self, job_id: str) -> str:
         return os.path.join(self.jobs_dir, f"{job_id}.json")

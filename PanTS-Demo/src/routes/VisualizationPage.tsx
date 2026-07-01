@@ -21,6 +21,8 @@ import { SegmentationMeshViewer } from "../components/MeshViewer";
 import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
+import AISidebar from "../components/AIAssistant/AISidebar";
+import { buildViewerActions } from "../components/AIAssistant/assistantActions";
 import SnakeGame from "../components/SnakeGame/SnakeGame";
 import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
 import ZoomHandle from "../components/zoomHandle";
@@ -163,6 +165,7 @@ function VisualizationPage() {
 	const [volumeId, setVolumeId] = useState<string | null>(null);
 	const [showReportScreen, setShowReportScreen] = useState(false);
 	const [showStats, setShowStats] = useState(false);
+	const [showAISidebar, setShowAISidebar] = useState(false);
 	const [organStats, setOrganStats] = useState<OrganStat[] | null>(null);
 	const [statsLoading, setStatsLoading] = useState(false);
 	const [statsError, setStatsError] = useState(false);
@@ -464,7 +467,7 @@ function VisualizationPage() {
 		if (shared.ww != null && shared.wc != null) handleWindowChange(shared.ww, shared.wc);
 		if (shared.opacity != null) {
 			setOpacityValue(shared.opacity);
-			setToolGroupOpacity(shared.opacity);
+			setToolGroupOpacity(shared.opacity / 100);
 		}
 		if (shared.hidden?.length) {
 			// The checkState effect below applies the visibility change (Cornerstone + NiiVue).
@@ -645,6 +648,18 @@ function VisualizationPage() {
 		setShowStats((v) => !v);
 		loadOrganStats();
 	};
+
+
+	const aiActions = buildViewerActions({
+		checkBoxData,
+		setCheckState,
+		setOpacityValue,
+		handleWindowChange,
+		setViewModeFn: setViewMode,
+		setActiveMeasureToolFn: setActiveMeasureTool,
+		caseId: String(caseId),
+		apiBase: API_BASE,
+	});
 
 	const handleDownloadClick = async () => {
 		const downloadUrl = sessionId
@@ -927,6 +942,14 @@ function VisualizationPage() {
 												<IconChartBar size={20} color={showStats ? "#08090b" : "white"} />
 												<span className="vp-tool__tip">Organ stats</span>
 											</button>
+											<button
+												className={`vp-tool ${showAISidebar ? "vp-tool--active" : ""}`}
+												onClick={() => setShowAISidebar((visible) => !visible)}
+												aria-label="Open BodyMaps AI"
+											>
+												<span style={{ fontFamily: "var(--vp-mono)", fontSize: "12px", fontWeight: 700 }}>AI</span>
+												<span className="vp-tool__tip">BodyMaps AI</span>
+											</button>
 											{!sessionId && localAvailable && (
 												<button
 													className={`vp-tool ${isHd ? "vp-tool--active" : ""}`}
@@ -1119,6 +1142,22 @@ function VisualizationPage() {
 					/>
 				)
 			}
+
+			<AISidebar
+				open={showAISidebar}
+				onClose={() => setShowAISidebar(false)}
+				caseId={String(caseId)}
+				sessionId={sessionId}
+				availableOrgans={checkBoxData.map((organ) => organ.label)}
+				viewerState={{
+					view: viewMode,
+					opacity: opacityValue,
+					windowWidth,
+					windowCenter,
+					zoomLevel,
+				}}
+				actions={aiActions}
+			/>
 		</div >
 	);
 }

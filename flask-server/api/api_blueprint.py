@@ -4,6 +4,7 @@ from services.session_manager import SessionManager, generate_uuid
 from services.auto_segmentor import run_auto_segmentation
 from services.mesh_generation import generate_mesh_manifest, generate_organ_glb_bytes
 from services.inference_job_queue import InferenceJobQueue
+from services.intent_parser import parse_intent
 from models.application_session import ApplicationSession
 from models.combined_labels import CombinedLabels
 from models.base import db
@@ -1377,3 +1378,35 @@ def api_random_topk_rotate_norand():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+@api_blueprint.route("/ai-command", methods=["POST"])
+def ai_command():
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        message = (body.get("message") or "").strip()
+        if not message:
+            return jsonify({
+                "reply": "Please type a question or viewer command.",
+                "actions": [],
+                "source": "hardcoded",
+            }), 400
+        available_organs = body.get("available_organs") or []
+        if not isinstance(available_organs, list):
+            available_organs = []
+        viewer_state = body.get("viewer_state") or {}
+        case_id = str(body.get("case_id") or body.get("session_id") or "")
+        result = parse_intent(
+            message=message,
+            available_organs=available_organs,
+            viewer_state=viewer_state,
+            case_id=case_id or None,
+        )
+        return jsonify(result)
+    except Exception as error:
+        print("[ai_command error]", error)
+        return jsonify({
+            "reply": "An internal error occurred while processing the AI command.",
+            "actions": [],
+            "source": "error",
+        }), 500
+
