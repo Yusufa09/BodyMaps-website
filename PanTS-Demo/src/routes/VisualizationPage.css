@@ -680,7 +680,7 @@
   top: 16px;
   right: 16px;
   bottom: 16px;
-  width: 300px;
+  width: 350px;
   z-index: 48;
   display: flex;
   flex-direction: column;
@@ -700,6 +700,26 @@
   padding: 14px 16px;
   border-bottom: 1px solid var(--vp-border);
 }
+.vp-stats__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vp-stats__export {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--vp-border);
+  color: var(--vp-text-dim);
+  font-family: var(--vp-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.vp-stats__export:hover {
+  color: var(--vp-text);
+  background: rgba(255, 255, 255, 0.12);
+}
 .vp-stats__close {
   background: transparent;
   border: none;
@@ -710,6 +730,18 @@
   padding: 0 4px;
 }
 .vp-stats__close:hover { color: var(--vp-text); }
+/* Out-of-range summary banner above the table. */
+.vp-stats__summary {
+  margin: 10px 12px 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 180, 84, 0.1);
+  border: 1px solid rgba(255, 180, 84, 0.28);
+  color: #ffce9a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.vp-stats__summary strong { color: #ffb454; }
 .vp-stats__msg {
   padding: 24px 16px;
   font-family: var(--vp-mono);
@@ -737,13 +769,63 @@
   font-size: 12.5px;
   color: var(--vp-text);
 }
+/* 4-column layout when the population percentile column is present. */
+.vp-stats__table--pct .vp-stats__row {
+  grid-template-columns: 1.15fr 0.8fr 0.55fr 0.85fr;
+  gap: 6px;
+}
 .vp-stats__row span:nth-child(2),
-.vp-stats__row span:nth-child(3) {
+.vp-stats__row span:nth-child(3),
+.vp-stats__row span:nth-child(4) {
   font-family: var(--vp-mono);
   font-size: 11px;
   color: var(--vp-text-dim);
   text-align: right;
 }
+/* Percentile cell: number stacked over a tiny distribution sparkline. */
+.vp-stats__pct {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.vp-stats__pctnum {
+  font-family: var(--vp-mono);
+  font-size: 11px;
+}
+/* Muted by default, highlighted when in the extreme tails (<p5 / >p95). */
+.vp-stats__pct--flag {
+  color: #ffb454 !important;
+  font-weight: 600;
+}
+/* Percentile sparkline: 0–100 track, p5–p95 band shaded, marker at the case value. */
+.vp-spark {
+  position: relative;
+  width: 100%;
+  max-width: 52px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.vp-spark__band {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  top: 0;
+  bottom: 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.vp-spark__marker {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transform: translate(-50%, -50%);
+}
+.vp-spark__marker--flag { background: #ffb454; }
 .vp-stats__row:not(.vp-stats__row--head):nth-child(odd) {
   background: rgba(255, 255, 255, 0.03);
 }
