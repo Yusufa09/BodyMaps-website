@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 ALLOWED_ACTION_TYPES = {
@@ -56,11 +55,15 @@ ORGAN_SYNONYMS = {
 
 def _normalize(text: str) -> str:
     value = text.lower().strip()
-    value = value.replace("hounsfield unit", "hu").replace("hounsfield units", "hu")
+    value = value.replace("hounsfield units", "hu").replace("hounsfield unit", "hu")
     value = value.replace("3 d", "3d")
-    value = re.sub(r"[^\w\s%.-]", " ", value)
-    value = re.sub(r"\s+", " ", value)
-    return value.strip()
+    cleaned = []
+    for char in value:
+        if char.isalnum() or char.isspace() or char in {"%", ".", "-"}:
+            cleaned.append(char)
+        else:
+            cleaned.append(" ")
+    return " ".join("".join(cleaned).split())
 
 
 def _pretty_organ(value: str) -> str:
@@ -73,6 +76,36 @@ def _contains_any(text: str, terms: list[str]) -> bool:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _has_phrase(text: str, phrase: str) -> bool:
+    return f" {phrase} " in f" {text} "
+
+
+def _parse_float_token(token: str) -> float | None:
+    value = token.strip().strip("%")
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _number_after_terms(text: str, terms: list[str], scan_tokens: int = 5) -> float | None:
+    tokens = text.split()
+    for term in terms:
+        term_tokens = term.split()
+        term_len = len(term_tokens)
+        for index in range(0, len(tokens) - term_len + 1):
+            if tokens[index:index + term_len] == term_tokens:
+                start = index + term_len
+                end = min(len(tokens), start + scan_tokens)
+                for candidate in tokens[start:end]:
+                    number = _parse_float_token(candidate)
+                    if number is not None:
+                        return number
+    return None
 
 
 def _organ_aliases_for_available(organ: str) -> list[str]:
@@ -100,7 +133,8 @@ def _match_organs(text: str, available_organs: list[str]) -> list[str]:
                 matched.append(organ)
     for organ in available_organs:
         for alias in _organ_aliases_for_available(organ):
-            if alias and re.search(rf"\b{re.escape(alias.replace('_', ' '))}\b", norm):
+            normalized_alias = _normalize(alias.replace("_", " "))
+            if normalized_alias and _has_phrase(norm, normalized_alias):
                 if organ not in matched:
                     matched.append(organ)
                 break
@@ -211,9 +245,9 @@ def _parse_case_data_question(norm: str) -> dict[str, Any] | None:
 
 
 def _parse_opacity(norm: str, viewer_state: dict[str, Any]) -> dict[str, Any] | None:
-    explicit = re.search(r"(?:opacity|transparent|transparency)\s*(?:to|=|:)?\s*(\d+(?:\.\d+)?)\s*%?", norm)
-    if explicit:
-        return {"type": "set_opacity", "value": _clamp(float(explicit.group(1)), 0, 100)}
+    explicit = _number_after_terms(norm, ["opacity", "transparent", "transparency"])
+    if explicit is not None:
+        return {"type": "set_opacity", "value": _clamp(explicit, 0, 100)}
     current = float(viewer_state.get("opacity", 70) or 70)
     if _contains_any(norm, ["more transparent", "less opaque", "decrease opacity", "lower opacity", "reduce opacity"]):
         return {"type": "set_opacity", "value": _clamp(current - 20, 0, 100)}
@@ -238,10 +272,10 @@ def _parse_window(norm: str, viewer_state: dict[str, Any]) -> list[dict[str, Any
         actions.append({"type": "set_window", "width": max(1, width - 80), "center": center})
     if _contains_any(norm, ["decrease contrast", "less contrast", "lower contrast"]):
         actions.append({"type": "set_window", "width": width + 80, "center": center})
-    ww = re.search(r"(?:window width|ww|contrast)\s*(?:to|=|:)?\s*(-?\d+(?:\.\d+)?)", norm)
-    wc = re.search(r"(?:window center|window level|wc|level|brightness)\s*(?:to|=|:)?\s*(-?\d+(?:\.\d+)?)", norm)
-    if ww or wc:
-        actions.append({"type": "set_window", "width": max(1, float(ww.group(1)) if ww else width), "center": float(wc.group(1)) if wc else center})
+    parsed_width = _number_after_terms(norm, ["window width", "ww", "contrast"])
+    parsed_center = _number_after_terms(norm, ["window center", "window level", "wc", "level", "brightness"])
+    if parsed_width is not None or parsed_center is not None:
+        actions.append({"type": "set_window", "width": max(1, parsed_width if parsed_width is not None else width), "center": parsed_center if parsed_center is not None else center})
     return actions
 
 
@@ -261,9 +295,9 @@ def _parse_view(norm: str) -> dict[str, Any] | None:
 
 def _parse_zoom(norm: str, viewer_state: dict[str, Any]) -> dict[str, Any] | None:
     current = float(viewer_state.get("zoomLevel", 1) or 1)
-    explicit = re.search(r"zoom\s*(?:to|=|:)?\s*(\d+(?:\.\d+)?)", norm)
-    if explicit:
-        return {"type": "set_zoom", "value": _clamp(float(explicit.group(1)), 0.1, 20)}
+    explicit = _number_after_terms(norm, ["zoom"])
+    if explicit is not None:
+        return {"type": "set_zoom", "value": _clamp(explicit, 0.1, 20)}
     if "zoom to fit" in norm or "fit to screen" in norm or "reset zoom" in norm:
         return {"type": "zoom_to_fit"}
     if "zoom in" in norm:
@@ -326,17 +360,17 @@ def _validate_action(action: dict[str, Any], available_organs: list[str]) -> boo
         return isinstance(action.get("organ"), str) and action["organ"] in available_organs and action.get("metric") in ALLOWED_METRICS
     if action_type == "set_opacity":
         value = action.get("value")
-        if not isinstance(value, int | float):
+        if not isinstance(value, (int, float)):
             return False
         action["value"] = _clamp(float(value), 0, 100)
         return True
     if action_type == "set_window":
-        return isinstance(action.get("width"), int | float) and isinstance(action.get("center"), int | float)
+        return isinstance(action.get("width"), (int, float)) and isinstance(action.get("center"), (int, float))
     if action_type == "set_window_preset":
         return action.get("preset") in ALLOWED_PRESETS
     if action_type == "set_zoom":
         value = action.get("value")
-        if not isinstance(value, int | float):
+        if not isinstance(value, (int, float)):
             return False
         action["value"] = _clamp(float(value), 0.1, 20)
         return True
@@ -391,7 +425,7 @@ def _action_label(action: dict[str, Any]) -> str:
 
 
 def parse_intent(message: str, available_organs: list[str], viewer_state: dict | None = None, case_id: str | None = None) -> dict[str, Any]:
-    norm = _normalize(message)
+    norm = _normalize(message[:1000])
     current_viewer_state = viewer_state or {}
     current_organs = available_organs or []
     if not norm:

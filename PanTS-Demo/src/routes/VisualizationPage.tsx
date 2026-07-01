@@ -13,7 +13,7 @@ import {
     IconSquareDashed,
     IconTrash
 } from "@tabler/icons-react";
-import React, { lazy, Suspense, useEffect, useRef, useState, type MouseEvent } from "react";
+import React, { Suspense, lazy, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -650,7 +650,7 @@ function VisualizationPage() {
 	};
 
 
-	const aiActions = buildViewerActions({
+	const aiActions = useMemo(() => buildViewerActions({
 		checkBoxData,
 		setCheckState,
 		setOpacityValue,
@@ -659,7 +659,7 @@ function VisualizationPage() {
 		setActiveMeasureToolFn: setActiveMeasureTool,
 		caseId: String(caseId),
 		apiBase: API_BASE,
-	});
+	}), [checkBoxData, caseId]);
 
 	const handleDownloadClick = async () => {
 		const downloadUrl = sessionId

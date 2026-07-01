@@ -1403,7 +1403,7 @@ def ai_command():
         )
         return jsonify(result)
     except Exception as error:
-        print("[ai_command error]", error)
+        print("[ai_command error]", type(error).__name__)
         return jsonify({
             "reply": "An internal error occurred while processing the AI command.",
             "actions": [],

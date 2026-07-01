@@ -48,3 +48,4 @@ if (!URL.revokeObjectURL) {
 // No WebGL in jsdom — return null so canvas-based code degrades instead of crashing.
 HTMLCanvasElement.prototype.getContext =
 	HTMLCanvasElement.prototype.getContext || (vi.fn(() => null) as never);
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
