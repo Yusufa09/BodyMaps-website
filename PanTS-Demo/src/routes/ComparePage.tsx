@@ -5,6 +5,7 @@
 // The two case ids live in the URL (?a=&b=) → the whole comparison is shareable.
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { prefetchCompareViewerChunk, prefetchCompareVolumes } from "../helpers/compareSources";
 import { alignStatRows } from "../helpers/compareStats";
 import { API_BASE } from "../helpers/constants";
 import { loadOrganNorms, type OrganNorms } from "../helpers/organNorms";
@@ -133,6 +134,29 @@ export default function ComparePage() {
 		loadOrganNorms().then((n) => n && setNorms(n));
 	}, []);
 
+	// Warm the live viewer (its Cornerstone JS chunk + both cases' CT + segmentation volumes)
+	// in the background so opening it is fast. Both are large, so the trick is to only pay
+	// that cost for users who are actually likely to open it:
+	//   • gate it behind a short DWELL — quick bouncers who glance at the stats and leave
+	//     trigger nothing (the timer is cancelled on unmount); readers who stay (the ones
+	//     likely to open the viewer) get a head start well before they click.
+	//   • hovering the "View images side by side" button warms it immediately (deduped), for
+	//     users who beat the timer.
+	// prefetchAllowed() additionally skips Save-Data / slow connections. The dwell also lets
+	// the stats page's own small requests render first.
+	const warmViewer = () => {
+		if (idA && idB) {
+			prefetchCompareViewerChunk();
+			prefetchCompareVolumes([idA, idB]);
+		}
+	};
+	useEffect(() => {
+		if (!idA || !idB) return;
+		const timer = window.setTimeout(warmViewer, 1500);
+		return () => window.clearTimeout(timer);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [idA, idB]);
+
 	const a = useCaseData(idA);
 	const b = useCaseData(idB);
 
@@ -187,6 +211,16 @@ export default function ComparePage() {
 						placeholder="Case B id"
 						aria-label="Case B id"
 					/>
+					{idA && idB && (
+						<Link
+							className="cmp__viewerlink"
+							to={`/compare-viewer?a=${idA}&b=${idB}`}
+							onMouseEnter={warmViewer}
+							onFocus={warmViewer}
+						>
+							View images side by side →
+						</Link>
+					)}
 				</div>
 			</div>
 

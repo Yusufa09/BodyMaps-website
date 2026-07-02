@@ -12,6 +12,7 @@ import TeamPage from "./routes/TeamPage";
 // is the bulk of the JS bundle. Code-split them so the landing + dataset pages don't
 // download the viewer up front — they only load it when a case is actually opened.
 const VisualizationPage = lazy(() => import("./routes/VisualizationPage"));
+const CompareViewerPage = lazy(() => import("./routes/CompareViewerPage"));
 const UploadPage = lazy(() => import("./routes/UploadPage"));
 const RotatingHeartLoader = lazy(() => import("./components/Loading"));
 
@@ -65,6 +66,7 @@ function App() {
 								<Route path="/upload" element={<UploadPage />} />
 									<Route path="/team" element={<TeamPage />} />
 									<Route path="/compare" element={<ComparePage />} />
+									<Route path="/compare-viewer" element={<CompareViewerPage />} />
 							</Routes>
 						</Suspense>
 					</BrowserRouter>
