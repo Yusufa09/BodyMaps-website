@@ -4,6 +4,7 @@ import "./App.css";
 import { AnnotationProvider } from "./contexts/annotationContexts";
 import { FileProvider } from "./contexts/fileContexts";
 import LandingPage from "./pages/LandingPage";
+import ComparePage from "./routes/ComparePage";
 import Homepage from "./routes/Homepage";
 import TeamPage from "./routes/TeamPage";
 
@@ -63,6 +64,7 @@ function App() {
 								<Route path="/test" element={<RotatingHeartLoader />} />
 								<Route path="/upload" element={<UploadPage />} />
 									<Route path="/team" element={<TeamPage />} />
+									<Route path="/compare" element={<ComparePage />} />
 							</Routes>
 						</Suspense>
 					</BrowserRouter>

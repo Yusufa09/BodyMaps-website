@@ -1,0 +1,181 @@
+.cmp {
+  min-height: 100vh;
+  background: #08090b;
+  color: #f4f5f7;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  padding: 20px clamp(16px, 5vw, 64px) 64px;
+  box-sizing: border-box;
+}
+
+.cmp__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.cmp__home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4f5f7;
+  text-decoration: none;
+  font-size: 18px;
+}
+.cmp__home:hover { background: rgba(255, 255, 255, 0.08); }
+.cmp__title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+.cmp__inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.cmp__input {
+  width: 120px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f5f7;
+  font-family: inherit;
+  font-size: 13px;
+}
+.cmp__input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.cmp__swap {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f4f5f7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.cmp__swap:hover { background: rgba(255, 255, 255, 0.12); }
+.cmp__viewerlink {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cmp__viewerlink:hover { background: #1d4ed8; }
+
+.cmp__cases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.cmp-case {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cmp-case--empty {
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  min-height: 96px;
+}
+.cmp-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #111318;
+  flex-shrink: 0;
+}
+.cmp-thumb--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: "Space Mono", monospace;
+}
+.cmp-case__meta { display: flex; flex-direction: column; gap: 6px; }
+.cmp-case__id { font-size: 15px; font-weight: 600; }
+.cmp-case__demo {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: "Space Mono", monospace;
+}
+.cmp-case__open {
+  margin-top: auto;
+  font-size: 12px;
+  color: #7aa2ff;
+  text-decoration: none;
+}
+.cmp-case__open:hover { text-decoration: underline; }
+
+.cmp__msg {
+  padding: 40px 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cmp__table {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cmp__row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 16px;
+  font-size: 13px;
+}
+.cmp__row:not(.cmp__row--head):nth-child(odd) { background: rgba(255, 255, 255, 0.025); }
+.cmp__row--head {
+  background: rgba(255, 255, 255, 0.05);
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.cmp__row--head span:not(:first-child),
+.cmp__cell { text-align: right; }
+.cmp__organ { color: #f4f5f7; }
+.cmp__cell {
+  font-family: "Space Mono", monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.cmp__pct {
+  font-style: normal;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
+}
+.cmp__delta { font-weight: 600; }
+.cmp-delta--up { color: #6ee7a8; }
+.cmp-delta--down { color: #ff9db1; }
+
+@media (max-width: 640px) {
+  .cmp__cases { grid-template-columns: 1fr; }
+  .cmp__inputs { margin-left: 0; width: 100%; }
+  .cmp__input { flex: 1; width: auto; }
+}
