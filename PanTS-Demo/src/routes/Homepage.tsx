@@ -168,6 +168,25 @@ export default function Homepage() {
 		toggleSavedCase({ id, sex: m?.sex ?? "", age: m?.age ?? 0, tumor: m?.tumor ?? 0 });
 	};
 
+	// Cases picked for side-by-side comparison (max 2). Adding a third drops the oldest,
+	// so the two most recent picks are always what get compared.
+	const [compareIds, setCompareIds] = useState<number[]>([]);
+	const [compareTyped, setCompareTyped] = useState("");
+	const toggleCompare = (id: number) => {
+		setCompareIds((prev) =>
+			prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)
+		);
+	};
+	// Add a case by id typed into the tray (idempotent; caps at the two most recent).
+	const addCompareId = (id: number) => {
+		setCompareIds((prev) => (prev.includes(id) ? prev : [...prev, id].slice(-2)));
+	};
+	const submitTypedCompare = () => {
+		const n = parseInt(compareTyped.trim(), 10);
+		if (Number.isFinite(n) && n > 0) addCompareId(n);
+		setCompareTyped("");
+	};
+
 	// Turn /api/search (or /api/random) items into the ids + metadata the grid needs.
 	const ingestItems = (items: SearchItem[]) => {
 		const ids: number[] = [];
@@ -920,6 +939,8 @@ export default function Homepage() {
 										onToggleSave={() =>
 											handleToggleSave(c.id, { sex: c.sex, age: c.age, tumor: c.tumor })
 										}
+										compareSelected={compareIds.includes(c.id)}
+										onToggleCompare={() => toggleCompare(c.id)}
 									/>
 								))
 							: loading
@@ -937,6 +958,8 @@ export default function Homepage() {
 											previewMetadata={previewMetadata[id]}
 											saved={savedIds.has(id)}
 											onToggleSave={() => handleToggleSave(id)}
+											compareSelected={compareIds.includes(id)}
+											onToggleCompare={() => toggleCompare(id)}
 										/>
 									))}
 					</div>
@@ -999,6 +1022,108 @@ export default function Homepage() {
 						);
 					})()}
 			</section>
+
+			{/* Floating comparison tray — appears once a case is picked via the compare button
+			    on a card; links to the /compare view when two are selected. */}
+			{compareIds.length > 0 && (
+				<div
+					style={{
+						position: "fixed",
+						bottom: "24px",
+						left: "50%",
+						transform: "translateX(-50%)",
+						zIndex: 60,
+						display: "flex",
+						alignItems: "center",
+						gap: "14px",
+						background: "rgba(14,15,18,0.94)",
+						backdropFilter: "blur(12px)",
+						border: "1px solid rgba(255,255,255,0.14)",
+						borderRadius: "12px",
+						padding: "10px 14px",
+						boxShadow: "0 16px 40px -12px rgba(0,0,0,0.6)",
+						color: "#fff",
+						fontSize: "13px",
+					}}
+				>
+					<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>
+						{compareIds.map((id) => `#${id}`).join("  vs  ")}
+					</span>
+					{compareIds.length < 2 && (
+						<form
+							onSubmit={(e) => {
+								e.preventDefault();
+								submitTypedCompare();
+							}}
+							style={{ display: "flex", alignItems: "center", gap: "6px" }}
+						>
+							<input
+								value={compareTyped}
+								onChange={(e) => setCompareTyped(e.target.value.replace(/[^0-9]/g, ""))}
+								placeholder="type case #"
+								inputMode="numeric"
+								aria-label="Add a case by number"
+								style={{
+									width: "96px",
+									padding: "5px 8px",
+									borderRadius: "8px",
+									border: "1px solid rgba(255,255,255,0.2)",
+									background: "rgba(255,255,255,0.06)",
+									color: "#fff",
+									fontFamily: "'JetBrains Mono', monospace",
+									fontSize: "12px",
+								}}
+							/>
+							<button
+								type="submit"
+								disabled={compareTyped.trim() === ""}
+								style={{
+									background: "transparent",
+									border: "1px solid rgba(255,255,255,0.2)",
+									color: "#fff",
+									borderRadius: "8px",
+									padding: "5px 10px",
+									cursor: compareTyped.trim() === "" ? "not-allowed" : "pointer",
+									fontSize: "12px",
+									opacity: compareTyped.trim() === "" ? 0.5 : 1,
+								}}
+							>
+								Add
+							</button>
+						</form>
+					)}
+					<button
+						onClick={() => setCompareIds([])}
+						style={{
+							background: "transparent",
+							border: "1px solid rgba(255,255,255,0.2)",
+							color: "#fff",
+							borderRadius: "8px",
+							padding: "5px 10px",
+							cursor: "pointer",
+							fontSize: "12px",
+						}}
+					>
+						Clear
+					</button>
+					<button
+						disabled={compareIds.length < 2}
+						onClick={() => navigation(`/compare?a=${compareIds[0]}&b=${compareIds[1]}`)}
+						style={{
+							background: compareIds.length < 2 ? "rgba(37,99,235,0.4)" : "#2563eb",
+							border: "none",
+							color: "#fff",
+							borderRadius: "8px",
+							padding: "5px 12px",
+							cursor: compareIds.length < 2 ? "not-allowed" : "pointer",
+							fontSize: "12px",
+							fontWeight: 600,
+						}}
+					>
+						Compare →
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }

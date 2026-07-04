@@ -13,7 +13,7 @@ import {
     IconSquareDashed,
     IconTrash
 } from "@tabler/icons-react";
-import React, { Suspense, lazy, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -50,6 +50,17 @@ import {
     toggleCrosshairTool,
     type MeasurementToolName
 } from "../helpers/CornerstoneNifti2";
+import PercentileBar from "../components/PercentileBar";
+import {
+	describeBasis,
+	loadOrganNorms,
+	type OrganNorms,
+} from "../helpers/organNorms";
+import {
+	computeStatRows,
+	downloadStats,
+	summarizeOutOfRange,
+} from "../helpers/organStatsExport";
 import { filenameToName, getPanTSId } from "../helpers/utils";
 import { decodeViewerState, encodeViewerState } from "../helpers/viewerShareState";
 import { type CheckBoxData } from "../types";
@@ -169,6 +180,12 @@ function VisualizationPage() {
 	const [organStats, setOrganStats] = useState<OrganStat[] | null>(null);
 	const [statsLoading, setStatsLoading] = useState(false);
 	const [statsError, setStatsError] = useState(false);
+	// Population reference + this case's demographics, used to show each organ's volume
+	// percentile vs the dataset. Both are optional — if the norms asset is missing (e.g. a
+	// dev checkout) or the case has no metadata, the panel just omits the percentile column.
+	const [organNorms, setOrganNorms] = useState<OrganNorms | null>(null);
+	const [demographics, setDemographics] = useState<{ sex: string | null; age: number | null } | null>(null);
+	const normsTried = useRef(false);
 	// Measured download progress for the loading screen (from the nifti loader's real
 	// bytes-loaded/total — accurate, not a guess).
 	const [dlPct, setDlPct] = useState<number | null>(null);
@@ -644,22 +661,74 @@ function VisualizationPage() {
 		}
 	};
 
+	// Load the population norms (static asset) + this case's demographics so the panel can
+	// show each organ's volume percentile. Both fail soft: no norms or no metadata simply
+	// means the percentile column is omitted. Runs once.
+	const loadPercentileContext = async () => {
+		if (!normsTried.current) {
+			normsTried.current = true;
+			const norms = await loadOrganNorms();
+			if (norms) setOrganNorms(norms);
+		}
+		// Only dataset cases carry sex/age in the metadata; reuse the existing search
+		// endpoint (exact case-id match) rather than adding a per-case metadata route.
+		if (!demographics && pantsCase) {
+			try {
+				const res = await fetch(
+					`${API_BASE}/api/search?caseid=${encodeURIComponent(pantsCase)}&per_page=1`
+				);
+				const data = await res.json();
+				const item = Array.isArray(data.items) ? data.items[0] : null;
+				if (item) {
+					// Number(null) is 0, which would wrongly bucket a missing age as "0-9" —
+					// so treat null/undefined/"" as unknown (null) explicitly.
+					const ageRaw = item.age;
+					const ageNum =
+						ageRaw === null || ageRaw === undefined || ageRaw === ""
+							? NaN
+							: Number(ageRaw);
+					setDemographics({
+						sex: item.sex ?? null,
+						age: Number.isFinite(ageNum) ? ageNum : null,
+					});
+				}
+			} catch {
+				/* percentile just falls back to the whole-dataset bucket */
+			}
+		}
+	};
+
 	const handleToggleStats = () => {
 		setShowStats((v) => !v);
 		loadOrganStats();
+		loadPercentileContext();
 	};
 
 
-	const aiActions = useMemo(() => buildViewerActions({
-		checkBoxData,
-		setCheckState,
-		setOpacityValue,
-		handleWindowChange,
-		setViewModeFn: setViewMode,
-		setActiveMeasureToolFn: setActiveMeasureTool,
-		caseId: String(caseId),
-		apiBase: API_BASE,
-	}), [checkBoxData, caseId]);
+const aiActions = useMemo(() => buildViewerActions({
+checkBoxData,
+setCheckState,
+setOpacityValue,
+handleWindowChange,
+setViewModeFn: setViewMode,
+setActiveMeasureToolFn: setActiveMeasureTool,
+caseId: String(caseId),
+apiBase: API_BASE,
+}), [checkBoxData, caseId]);
+
+const statRows = useMemo(
+() =>
+organStats
+? computeStatRows(
+organStats,
+organNorms,
+demographics?.sex ?? null,
+demographics?.age ?? null
+)
+: [],
+[organStats, organNorms, demographics]
+);
+const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 
 	const handleDownloadClick = async () => {
 		const downloadUrl = sessionId
@@ -1091,13 +1160,33 @@ function VisualizationPage() {
 				<div className="vp-stats">
 					<div className="vp-stats__head">
 						<span className="vp-panel__title">Organ Statistics</span>
-						<button
-							className="vp-stats__close"
-							onClick={() => setShowStats(false)}
-							aria-label="Close organ statistics"
-						>
-							×
-						</button>
+						<div className="vp-stats__actions">
+							{statRows.length > 0 && (
+								<>
+									<button
+										className="vp-stats__export"
+										onClick={() => downloadStats(statRows, "csv", caseId)}
+										title="Download as CSV"
+									>
+										CSV
+									</button>
+									<button
+										className="vp-stats__export"
+										onClick={() => downloadStats(statRows, "json", caseId)}
+										title="Download as JSON"
+									>
+										JSON
+									</button>
+								</>
+							)}
+							<button
+								className="vp-stats__close"
+								onClick={() => setShowStats(false)}
+								aria-label="Close organ statistics"
+							>
+								×
+							</button>
+						</div>
 					</div>
 					{statsLoading ? (
 						<div className="vp-stats__msg">Computing…</div>
@@ -1109,25 +1198,55 @@ function VisualizationPage() {
 								(They're computed from the dataset volumes on the server.)
 							</span>
 						</div>
-					) : organStats && organStats.length > 0 ? (
-						<div className="vp-stats__table">
-							<div className="vp-stats__row vp-stats__row--head">
-								<span>Organ</span>
-								<span>Volume</span>
-								<span>Mean HU</span>
+					) : statRows.length > 0 ? (
+						<>
+							{flaggedOrgans.length > 0 && (
+								<div className="vp-stats__summary">
+									<strong>{flaggedOrgans.length}</strong>{" "}
+									{flaggedOrgans.length === 1 ? "organ" : "organs"} outside the p5–p95 range:{" "}
+									{flaggedOrgans
+										.map((o) => `${o.label} (p${Math.round(o.percentile)})`)
+										.join(", ")}
+								</div>
+							)}
+							<div className={`vp-stats__table${organNorms ? " vp-stats__table--pct" : ""}`}>
+								<div className="vp-stats__row vp-stats__row--head">
+									<span>Organ</span>
+									<span>Volume</span>
+									<span>Mean HU</span>
+									{organNorms && <span title="Volume percentile vs the dataset">%ile</span>}
+								</div>
+								{statRows.map((r, i) => {
+									const flagged = r.percentile !== null && (r.percentile < 5 || r.percentile > 95);
+									return (
+										<div className="vp-stats__row" key={`${r.organ_name}-${i}`}>
+											<span>{r.label}</span>
+											<span>{r.volume_cm3 === null ? "NA" : `${Math.round(r.volume_cm3)} cm³`}</span>
+											<span>{r.mean_hu === null ? "NA" : Math.round(r.mean_hu)}</span>
+											{organNorms && (
+												<span
+													className={`vp-stats__pct${flagged ? " vp-stats__pct--flag" : ""}`}
+													title={
+														r.percentile !== null
+															? `${Math.round(r.percentile)}th percentile vs ${describeBasis(r.basis as string)} (n=${r.n})`
+															: "No reference group for this organ"
+													}
+												>
+													{r.percentile !== null ? (
+														<>
+															<span className="vp-stats__pctnum">p{Math.round(r.percentile)}</span>
+															<PercentileBar percentile={r.percentile} flagged={flagged} />
+														</>
+													) : (
+														"—"
+													)}
+												</span>
+											)}
+										</div>
+									);
+								})}
 							</div>
-							{organStats.map((o, i) => {
-								const badVol = o.volume_cm3 === 999999;
-								const badHu = o.mean_hu === 999999;
-								return (
-									<div className="vp-stats__row" key={`${o.organ_name}-${i}`}>
-										<span>{filenameToName(o.organ_name)}</span>
-										<span>{badVol ? "NA" : `${Math.round(o.volume_cm3)} cm³`}</span>
-										<span>{badHu ? "NA" : Math.round(o.mean_hu)}</span>
-									</div>
-								);
-							})}
-						</div>
+						</>
 					) : (
 						<div className="vp-stats__msg">No organ data available.</div>
 					)}

@@ -1,38 +1,27 @@
 import Header from "../components/Header";
 
-type Member = { name: string; title?: string; photo?: string };
-type Section = { heading: string; members: Member[] };
+type Member = { name: string; role: string; photo?: string };
 
-const SECTIONS: Section[] = [
-	{
-		heading: "Principal Investigator",
-		members: [{ name: "Zongwei Zhou, PhD", photo: "/headshots/zongwei-zhou.png" }],
-	},
-	{
-		heading: "Scientific Advisory Board",
-		members: [{ name: "Alan L. Yuille, PhD", photo: "/headshots/alan-yuille.jpg" }],
-	},
-	{
-		heading: "Core Contributors",
-		members: [
-			{ name: "Wenxuan Li", photo: "/headshots/wenxuan-li.jpeg" },
-			{ name: "Pedro RAS Bassi", photo: "/headshots/pedro-bassi.jpg" },
-			{ name: "Jaeden Pangaribuan" },
-			{ name: "Lucy Wu" },
-		],
-	},
+const MEMBERS: Member[] = [
+	{ name: "Zongwei Zhou, PhD", role: "Principal Investigator", photo: "/headshots/zongwei-zhou.png" },
+	{ name: "Alan L. Yuille, PhD", role: "Scientific Advisor", photo: "/headshots/alan-yuille.jpg" },
+	{ name: "Wenxuan Li", role: "PhD Student", photo: "/headshots/wenxuan-li.jpeg" },
+	{ name: "Pedro RAS Bassi", role: "PhD Student", photo: "/headshots/pedro-bassi.jpg" },
+	{ name: "Jaeden Pangaribuan", role: "Core Contributor" },
+	{ name: "Lucy Wu", role: "Core Contributor", photo: "/headshots/lucy-wu.jpg" },
 ];
 
 function Avatar({ photo, name }: { photo?: string; name: string }) {
 	return (
 		<div
 			style={{
-				width: 116,
-				height: 116,
+				width: 120,
+				height: 120,
 				borderRadius: "50%",
-				border: "2px solid #002D72",
+				border: "2.5px solid #002D72",
 				padding: 4,
 				boxSizing: "border-box",
+				flexShrink: 0,
 			}}
 		>
 			<div
@@ -72,31 +61,31 @@ function MemberCard({ member }: { member: Member }) {
 			}}
 		>
 			<Avatar photo={member.photo} name={member.name} />
-			<div
-				style={{
-					fontSize: 14,
-					fontWeight: 700,
-					letterSpacing: "0.04em",
-					textTransform: "uppercase",
-					color: "#1f2533",
-				}}
-			>
-				{member.name}
-			</div>
-			{member.title && (
+			<div>
+				<div
+					style={{
+						fontSize: 13,
+						fontWeight: 700,
+						letterSpacing: "0.04em",
+						textTransform: "uppercase",
+						color: "#1f2533",
+						marginBottom: 4,
+					}}
+				>
+					{member.name}
+				</div>
 				<div
 					style={{
 						fontSize: 11,
-						fontWeight: 600,
-						letterSpacing: "0.05em",
+						fontWeight: 500,
+						letterSpacing: "0.06em",
 						textTransform: "uppercase",
 						color: "#8a8f99",
-						maxWidth: 150,
 					}}
 				>
-					{member.title}
+					{member.role}
 				</div>
-			)}
+			</div>
 		</div>
 	);
 }
@@ -107,9 +96,9 @@ export default function TeamPage() {
 			<Header />
 			<main
 				style={{
-					maxWidth: "1180px",
+					maxWidth: "1100px",
 					margin: "0 auto",
-					padding: "48px 24px 80px",
+					padding: "64px 24px 100px",
 					fontFamily: "'Space Grotesk', sans-serif",
 				}}
 			>
@@ -119,41 +108,24 @@ export default function TeamPage() {
 						fontSize: "40px",
 						fontWeight: 400,
 						color: "#1f2533",
-						margin: "0 0 64px",
+						margin: "0 0 72px",
 					}}
 				>
 					Meet the <span style={{ fontWeight: 700 }}>team.</span>
 				</h1>
 
-				{SECTIONS.map((section) => (
-					<section key={section.heading} style={{ marginBottom: 64 }}>
-						<h2
-							style={{
-								fontSize: 12,
-								fontWeight: 700,
-								letterSpacing: "0.1em",
-								textTransform: "uppercase",
-								color: "#002D72",
-								margin: "0 0 32px",
-								borderBottom: "1px solid #e5e7eb",
-								paddingBottom: 10,
-							}}
-						>
-							{section.heading}
-						</h2>
-						<div
-							style={{
-								display: "flex",
-								flexWrap: "wrap",
-								gap: "48px 32px",
-							}}
-						>
-							{section.members.map((m) => (
-								<MemberCard key={m.name} member={m} />
-							))}
-						</div>
-					</section>
-				))}
+				<div
+					style={{
+						display: "grid",
+						gridTemplateColumns: "repeat(3, 1fr)",
+						gap: "56px 32px",
+						justifyItems: "center",
+					}}
+				>
+					{MEMBERS.map((m) => (
+						<MemberCard key={m.name} member={m} />
+					))}
+				</div>
 			</main>
 		</div>
 	);

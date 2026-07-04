@@ -9,9 +9,18 @@ type Props = {
 	previewMetadata: PreviewType;
 	saved?: boolean;
 	onToggleSave?: () => void;
+	compareSelected?: boolean;
+	onToggleCompare?: () => void;
 };
 
-export default function Preview({ id, previewMetadata, saved = false, onToggleSave }: Props) {
+export default function Preview({
+	id,
+	previewMetadata,
+	saved = false,
+	onToggleSave,
+	compareSelected = false,
+	onToggleCompare,
+}: Props) {
 	const navigate = useNavigate();
 	const [imgLoaded, setImgLoaded] = useState(false);
 	const [imgError, setImgError] = useState(false);
@@ -30,9 +39,8 @@ export default function Preview({ id, previewMetadata, saved = false, onToggleSa
 	// HuggingFace fallback, routed through the backend's same-origin proxy. A *direct*
 	// cross-origin image is blocked by the viewer's COEP: require-corp header (which is
 	// why thumbnails went missing); the proxy keeps it same-origin, matching home.html.
-	// const hfProfileUrl = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/profile_only/${caseIdStr}/profile.jpg`;
-	// const proxyThumbUrl = `${API_BASE}/api/proxy-image?url=${encodeURIComponent(hfProfileUrl)}`;
-	const proxyThumbUrl = `${API_BASE}/api/get_image_preview/${id}`;
+	const hfProfileUrl = `https://huggingface.co/datasets/BodyMaps/iPanTSMini/resolve/main/profile_only/${caseIdStr}/profile.jpg`;
+	const proxyThumbUrl = `${API_BASE}/api/proxy-image?url=${encodeURIComponent(hfProfileUrl)}`;
 	const handleImgError = () => {
 		if (thumbUrl !== proxyThumbUrl) {
 			setThumbUrl(proxyThumbUrl); // local failed — retry via the same-origin HF proxy
@@ -175,6 +183,57 @@ export default function Preview({ id, previewMetadata, saved = false, onToggleSa
 						>
 							<path d="M6 2a1 1 0 0 0-1 1v18l7-4 7 4V3a1 1 0 0 0-1-1H6z" />
 						</svg>
+					</button>
+				)}
+
+				{/* Compare selector — a labelled checkbox in the bottom-left (kept away from the
+				    top-right bookmark to avoid mis-taps). A checkbox + text reads as "select to
+				    compare" far more clearly than a bare icon. Reveals on hover; stays + turns
+				    blue once selected. */}
+				{onToggleCompare && (compareSelected || hovered) && (
+					<button
+						type="button"
+						aria-label={compareSelected ? `Remove case ${id} from comparison` : `Add case ${id} to comparison`}
+						aria-pressed={compareSelected}
+						title={compareSelected ? "Selected to compare — click to remove" : "Select to compare"}
+						onClick={(e) => {
+							e.stopPropagation();
+							onToggleCompare();
+						}}
+						className="absolute flex items-center"
+						style={{
+							bottom: "8px",
+							left: "8px",
+							gap: "6px",
+							padding: "5px 9px 5px 7px",
+							borderRadius: "8px",
+							border: "none",
+							outline: "none",
+							cursor: "pointer",
+							zIndex: 2,
+							background: compareSelected ? "#2563eb" : "rgba(0,0,0,0.5)",
+							transition: "background 0.15s",
+						}}
+					>
+						<span
+							className="flex items-center justify-center"
+							style={{
+								width: "14px",
+								height: "14px",
+								borderRadius: "4px",
+								border: compareSelected ? "none" : "1.5px solid rgba(255,255,255,0.85)",
+								background: compareSelected ? "#fff" : "transparent",
+							}}
+						>
+							{compareSelected && (
+								<svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block", fill: "none", stroke: "#2563eb", strokeWidth: 4, strokeLinecap: "round", strokeLinejoin: "round" }}>
+									<path d="M5 13l4 4L19 7" />
+								</svg>
+							)}
+						</span>
+						<span style={{ fontSize: "11px", fontWeight: 600, color: "#fff", letterSpacing: "0.01em" }}>
+							Compare
+						</span>
 					</button>
 				)}
 			</div>

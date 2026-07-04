@@ -327,7 +327,6 @@ def get_main_nifti(clabel_id):
 
         response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
         # response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
-        response.headers['Content-Encoding'] = 'gzip'
         # Volumes are immutable per case — let the browser cache so revisits are instant.
         response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
 
@@ -434,7 +433,6 @@ async def get_segmentations(combined_labels_id):
         if os.path.exists(low_path):
             response = make_response(send_file(low_path, mimetype='application/gzip'))
             response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
-            response.headers['Content-Encoding'] = 'gzip'
             response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
             return response
 
@@ -457,7 +455,6 @@ async def get_segmentations(combined_labels_id):
 
         response = make_response(send_file(nifti_path, mimetype='application/gzip'))
         response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
-        response.headers['Content-Encoding'] = 'gzip'
         response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
         # response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
         # response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
