@@ -1,0 +1,551 @@
+/* ===== ApiPage.css =====
+   Matches the BodyMaps / UploadPage aesthetic exactly.
+   Color palette: #ffffff / #f5f5f5 / #111111 (monochrome)
+   Fonts: Space Grotesk, JetBrains Mono
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ── Page wrapper ── */
+.api-page-wrapper {
+  min-height: 100vh;
+  background: #ffffff;
+  color: #111111;
+  font-family: 'Space Grotesk', sans-serif;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Ambient orbs (matches upload page) ── */
+.api-page-wrapper .ambient-orbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.api-page-wrapper .ambient-orbs .orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(50px);
+}
+.api-page-wrapper .ambient-orbs .orb-1 {
+  top: -120px;
+  left: -120px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(0,0,0,0.04) 0%, transparent 70%);
+}
+.api-page-wrapper .ambient-orbs .orb-2 {
+  bottom: -100px;
+  right: -150px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(0,0,0,0.03) 0%, transparent 70%);
+}
+
+/* ── Main content area ── */
+.api-main {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 36px 24px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Shared card ── */
+.api-card {
+  background: #f5f5f5;
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 16px;
+  padding: 28px 32px 32px;
+  position: relative;
+}
+.api-card-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8f8f8f;
+  margin-bottom: 20px;
+}
+
+/* ── Drop zone ── */
+.api-dropzone {
+  border: 1px dashed rgba(0,0,0,.15);
+  border-radius: 12px;
+  background: rgba(0,0,0,.015);
+  padding: 56px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  margin-bottom: 24px;
+}
+.api-dropzone:hover {
+  border-color: rgba(0,0,0,.25);
+  background: rgba(0,0,0,.03);
+}
+.api-dropzone.drag-over {
+  border-color: rgba(0,0,0,.4);
+  background: rgba(0,0,0,.06);
+}
+.api-dropzone-icon {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  color: #6a6a6a;
+  transition: color 0.25s;
+}
+.api-dropzone:hover .api-dropzone-icon {
+  color: #111111;
+}
+.api-dropzone-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #8f8f8f;
+  margin-bottom: 4px;
+}
+.api-dropzone-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #6a6a6a;
+  letter-spacing: 0.04em;
+}
+.api-dropzone-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.api-dropzone-select-btn {
+  padding: 7px 18px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 8px;
+  color: #111111;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.api-dropzone-select-btn:hover {
+  background: rgba(0,0,0,.1);
+  border-color: rgba(0,0,0,.18);
+}
+
+/* ── File chips ── */
+.api-file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.api-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #111111;
+  letter-spacing: 0.02em;
+}
+.api-file-chip-remove {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.08);
+  border: none;
+  color: #8f8f8f;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+  font-family: inherit;
+}
+.api-file-chip-remove:hover {
+  background: rgba(239,68,68,.2);
+  color: #ef4444;
+}
+
+/* ── Pipeline row ── */
+.api-pipeline-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-top: 4px;
+}
+.api-pipeline-step {
+  flex: 1;
+  min-width: 0;
+}
+.api-pipeline-step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.api-pipeline-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #002D72;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.api-pipeline-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #111111;
+}
+.api-pipeline-optional {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  font-style: italic;
+  color: #6a6a6a;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.api-pipeline-select {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 8px;
+  color: #8f8f8f;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236a6a6a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+.api-pipeline-select:hover {
+  border-color: rgba(0,0,0,.15);
+  background-color: rgba(0,0,0,.06);
+}
+.api-pipeline-select:focus {
+  border-color: rgba(0,0,0,.25);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.06);
+}
+.api-pipeline-select option {
+  background: #f5f5f5;
+  color: #111111;
+}
+.api-pipeline-select.has-value {
+  color: #111111;
+}
+.api-pipeline-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  padding-bottom: 4px;
+  color: #6a6a6a;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+/* ── Run button ── */
+.api-run-btn {
+  flex-shrink: 0;
+  padding: 10px 32px;
+  background: #002D72;
+  border: 1px solid #002D72;
+  border-radius: 8px;
+  color: #ffffff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.02em;
+  align-self: flex-end;
+}
+.api-run-btn:hover:not(:disabled) {
+  background: #00399a;
+  border-color: #00399a;
+}
+.api-run-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Counters ── */
+.api-counters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.api-counter-card {
+  background: #f5f5f5;
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 14px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.api-counter-value {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 32px;
+  font-weight: 600;
+  color: #111111;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.api-counter-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8f8f8f;
+  margin-top: 6px;
+}
+.api-counter-card.queued .api-counter-value  { color: #6a6a6a; }
+.api-counter-card.processing .api-counter-value { color: #002D72; }
+.api-counter-card.completed .api-counter-value  { color: #111111; }
+
+/* ── Job queue ── */
+.api-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.api-queue-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8f8f8f;
+}
+.api-download-all-btn {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 8px;
+  color: #6a6a6a;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.api-download-all-btn:hover:not(:disabled) {
+  border-color: rgba(0,0,0,.2);
+  color: #111111;
+  background: rgba(0,0,0,.03);
+}
+.api-download-all-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Filter tabs ── */
+.api-filter-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.api-filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 20px;
+  color: #6a6a6a;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.api-filter-tab:hover {
+  border-color: rgba(0,0,0,.18);
+  color: #111111;
+  background: rgba(0,0,0,.03);
+}
+.api-filter-tab.active {
+  background: #111111;
+  border-color: #111111;
+  color: #ffffff;
+}
+.api-filter-tab-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* ── Job list ── */
+.api-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.api-job-list::-webkit-scrollbar {
+  width: 4px;
+}
+.api-job-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.api-job-list::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.12);
+  border-radius: 2px;
+}
+
+.api-job-empty {
+  background: #f5f5f5;
+  border: 1px dashed rgba(0,0,0,.12);
+  border-radius: 12px;
+  padding: 32px 20px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #8f8f8f;
+}
+
+/* ── Job row ── */
+.api-job-row {
+  background: #f5f5f5;
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 12px;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.api-job-row.clickable {
+  cursor: pointer;
+}
+.api-job-row.clickable:hover {
+  border-color: rgba(0,0,0,.14);
+  background: rgba(0,0,0,.02);
+}
+
+.api-job-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.api-job-info {
+  flex: 1;
+  min-width: 0;
+}
+.api-job-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.api-job-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #6a6a6a;
+  margin-top: 2px;
+}
+
+/* ── Progress bar inside job row ── */
+.api-job-progress-wrap {
+  width: 100px;
+  flex-shrink: 0;
+}
+.api-job-progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(0,0,0,.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.api-job-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(.2,.8,.2,1);
+  background: linear-gradient(90deg, #6a6a6a, #002D72);
+}
+.api-job-progress-pct {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #8f8f8f;
+  margin-top: 4px;
+  text-align: right;
+}
+
+/* ── Status badge ── */
+.api-status-badge {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.api-status-badge.queued     { color: #8f8f8f; }
+.api-status-badge.processing { color: #002D72; }
+.api-status-badge.completed  { color: #111111; }
+.api-status-badge.failed     { color: #ef4444; }
+
+/* ── Per-job download button ── */
+.api-job-dl-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 6px;
+  color: #111111;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.api-job-dl-btn:hover {
+  background: rgba(0,0,0,.05);
+  border-color: rgba(0,0,0,.2);
+}
