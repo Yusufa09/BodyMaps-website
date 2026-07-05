@@ -37,18 +37,16 @@ import requests  # ⭐ 只在這裡 import 一次 requests
 api_blueprint = Blueprint("api", __name__)
 last_session_check = datetime.now()
 
-import re
 import hmac
 import threading
 
 # Session/case ids come straight from client requests and are joined into
-# filesystem paths below. Reject anything that could escape the intended
-# directory (path separators, "..", drive letters) before it touches os.path.
-_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# filesystem paths below. _is_safe_id (pure, unit-tested in tests/unit/
+# test_path_safety.py) rejects anything that could escape the intended
+# directory before it touches os.path; secure_filename is the barrier at each
+# path-construction site.
+from .path_safety import is_safe_id as _is_safe_id
 
-
-def _is_safe_id(value) -> bool:
-    return bool(value) and isinstance(value, str) and bool(_SAFE_ID_RE.match(value)) and value not in (".", "..")
 
 def _load_metadata_cache():
     try:

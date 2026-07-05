@@ -61,6 +61,7 @@ import {
 	downloadStats,
 	summarizeOutOfRange,
 } from "../helpers/organStatsExport";
+import { downloadUrlAsFile } from "../helpers/downloadFile";
 import { filenameToName, getPanTSId } from "../helpers/utils";
 import { decodeViewerState, encodeViewerState } from "../helpers/viewerShareState";
 import { type CheckBoxData } from "../types";
@@ -740,20 +741,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 			? `${API_BASE}/api/get_result/${sessionId}`
 			: `${API_BASE}/api/download/${pantsCase}`;
 		try {
-			const response = await fetch(downloadUrl);
-			if (!response.ok) {
-				throw new Error(`Download failed (${response.status})`);
-			}
-			const blob = await response.blob();
-			const url = window.URL.createObjectURL(blob);
-
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = `${caseId}_segmentations.zip`;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			window.URL.revokeObjectURL(url);
+			await downloadUrlAsFile(downloadUrl, `${caseId}_segmentations.zip`);
 		} catch (e) {
 			console.error("Segmentation download failed:", e);
 			alert("Could not download segmentations. Please try again.");
