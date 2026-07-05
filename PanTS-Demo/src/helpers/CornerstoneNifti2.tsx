@@ -185,10 +185,18 @@ export function subscribeToVolumeProgress(
 		eventTarget.removeEventListener("CORNERSTONE_NIFTI_VOLUME_PROGRESS", handler as EventListener);
 }
 
+// Cornerstone core/loader/tools only need initializing once per page load;
+// re-running them on every case load (HD toggle, navigation) risks duplicate
+// tool registration. Mirrors the guard in compareViewer.ts.
+let _cornerstoneInited = false;
+
 export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, ctUrl: string, segUrl: string | undefined, setLoading: React.Dispatch<React.SetStateAction<boolean>>) {
-    coreInit();
-    niftiImageLoaderInit();
-    cornerstoneToolsInit();
+    if (!_cornerstoneInited) {
+        coreInit();
+        niftiImageLoaderInit();
+        cornerstoneToolsInit();
+        _cornerstoneInited = true;
+    }
     _organCentroids = null; // recomputed lazily for the new case's segmentation
 
     const mainNiftiURL = ctUrl;
@@ -358,8 +366,6 @@ export function setVisibilities(checkState: boolean[]) {
         segmentation.config.visibility.setSegmentIndexVisibility(viewportId1, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i, checkState[i]);
         segmentation.config.visibility.setSegmentIndexVisibility(viewportId2, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i, checkState[i]);
         segmentation.config.visibility.setSegmentIndexVisibility(viewportId3, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i, checkState[i]);
-        console.log(checkState[i]);
-        // console.log(segmentation.config.visibility.getSegmentIndexVisibility(viewportId1, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i));
     }
     if (currentRenderingEngine) {
         currentRenderingEngine.renderViewports([viewportId1, viewportId2, viewportId3]);
@@ -447,7 +453,6 @@ export function setZoom(zoomValue: number){
       if (engine){
         const viewport = engine.getViewport(viewportId);
         viewport.setZoom(zoomValue);
-        console.log(viewport.getZoom());
         viewport.render();
       }
     })

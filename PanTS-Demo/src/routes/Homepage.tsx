@@ -215,9 +215,13 @@ export default function Homepage() {
 		setPreviewMetadata({});
 		const half = CARD_COUNT / 2;
 		try {
+			const okJson = (r: Response) => {
+				if (!r.ok) throw new Error(`Curated load failed (${r.status})`);
+				return r.json();
+			};
 			const [tumorRes, noTumorRes] = await Promise.all([
-				fetch(`${API_BASE}/api/search?tumor=1&sort_by=shape_desc&per_page=${half}`).then((r) => r.json()),
-				fetch(`${API_BASE}/api/search?tumor=0&sort_by=shape_desc&per_page=${half}`).then((r) => r.json()),
+				fetch(`${API_BASE}/api/search?tumor=1&sort_by=shape_desc&per_page=${half}`).then(okJson),
+				fetch(`${API_BASE}/api/search?tumor=0&sort_by=shape_desc&per_page=${half}`).then(okJson),
 			]);
 			const tumorItems: SearchItem[] = tumorRes.items ?? [];
 			const noTumorItems: SearchItem[] = noTumorRes.items ?? [];
@@ -243,6 +247,7 @@ export default function Homepage() {
 			const params = buildSearchParams(f, { sortBy: "quality", perPage: PER_PAGE });
 			params.set("page", String(p));
 			const res = await fetch(`${API_BASE}/api/search?${params.toString()}`);
+			if (!res.ok) throw new Error(`Search failed (${res.status})`);
 			const data = await res.json();
 			setResultCount(data.total ?? 0);
 			setPage(data.page ?? p);
@@ -322,12 +327,15 @@ export default function Homepage() {
 	// Warm the code-split viewer chunk once the dashboard is idle, so the first
 	// case-open is instant even when navigating via the case-ID search (no hover).
 	useEffect(() => {
-		const ric = (window as unknown as {
+		const w = window as unknown as {
 			requestIdleCallback?: (cb: () => void) => number;
-		}).requestIdleCallback;
+			cancelIdleCallback?: (handle: number) => void;
+		};
+		const ric = w.requestIdleCallback;
 		const id = ric ? ric(() => prefetchViewer()) : window.setTimeout(prefetchViewer, 1500);
 		return () => {
-			if (!ric) window.clearTimeout(id as number);
+			if (ric) w.cancelIdleCallback?.(id as number);
+			else window.clearTimeout(id as number);
 		};
 	}, []);
 
@@ -342,6 +350,7 @@ export default function Homepage() {
 			const res = await fetch(
 				`${API_BASE}/api/random?n=${CARD_COUNT}&k=120&scope=all`
 			);
+			if (!res.ok) throw new Error(`Shuffle failed (${res.status})`);
 			const data = await res.json();
 			ingestItems(data.items ?? []);
 		} catch (e) {

@@ -51,6 +51,28 @@ jobs:
       - name: Build
         run: npm run build
 
+  backend-security:
+    name: Backend security tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flask-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Dependency-light on purpose: the path-safety guard is pure (re + werkzeug),
+      # so we skip the full requirements.txt (heavy: nibabel/scipy, needs a DB) and
+      # run just the fast security unit tests that lock in the traversal protection.
+      - name: Install test deps
+        run: python -m pip install --upgrade pip pytest werkzeug
+
+      - name: Path-safety unit tests
+        run: python -m pytest tests/unit/test_path_safety.py -v
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
