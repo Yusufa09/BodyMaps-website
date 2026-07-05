@@ -151,7 +151,8 @@ function VisualizationPage() {
 	const axial_ref = useRef<HTMLDivElement>(null);
 	const sagittal_ref = useRef<HTMLDivElement>(null);
 	const coronal_ref = useRef<HTMLDivElement>(null);
-	const render_ref = useRef<HTMLCanvasElement>(null);
+	// render_ref (3D NiiVue canvas) removed — the 3D view it fed is disabled;
+	// restore this ref alongside the commented-out create3DVolume calls if re-enabled.
 	// const _cmapRef = useRef<NColorMap>(null);
 	// const TaskMenu_ref = useRef(null);
 	const VisualizationContainer_ref = useRef(null);
@@ -161,9 +162,7 @@ function VisualizationPage() {
 	//   const [sliceSagittal, setSliceSagittal] = useState(0);
 	//   const [sliceCoronal, setSliceCoronal] = useState(0);
 	const [checkState, setCheckState] = useState<boolean[]>([true]);
-	useState<string[] | null>(null);
 	const [NV, _setNV] = useState<Niivue | undefined>();
-	const [sessionKey, _setSessionKey] = useState<string | undefined>(undefined);
 	const [checkBoxData, setCheckBoxData] = useState<CheckBoxData[]>([]);
 	const [opacityValue, setOpacityValue] = useState(
 		APP_CONSTANTS.DEFAULT_SEGMENTATION_OPACITY * 100
@@ -316,6 +315,10 @@ function VisualizationPage() {
 	}, [loading, ctUrl]);
 
 	useEffect(() => {
+		// Guards against a stale async load winning a race: if ctUrl/segUrl change
+		// mid-load (e.g. HD toggle or navigation), the first renderVisualization can
+		// resolve after the second and clobber state with the wrong case's result.
+		let cancelled = false;
 		const setup = async () => {
 			// const state = location.state;
 			// if (!state) {
@@ -367,6 +370,8 @@ function VisualizationPage() {
 				setLoading
 			);
 
+			if (cancelled) return; // a newer load started; drop this stale result
+
 			setLoading(false);
 			const {
 				renderingEngine,
@@ -394,13 +399,14 @@ function VisualizationPage() {
 
 		setup();
 
+		return () => {
+			cancelled = true;
+		};
+		// refs have stable identity, so they aren't real deps; the loads key off
+		// ctUrl/segUrl/labelColorMap.
 	}, [
 		ctUrl,
 		segUrl,
-		axial_ref,
-		sagittal_ref,
-		coronal_ref,
-		render_ref,
 		labelColorMap,
 	]);
 	// Toggle checkbox state
@@ -619,7 +625,6 @@ function VisualizationPage() {
 	}, [
 		checkState,
 		checkBoxData,
-		sessionKey,
 	]);
 
 	const handleOpacityOnSliderChange = (
@@ -734,17 +739,25 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 		const downloadUrl = sessionId
 			? `${API_BASE}/api/get_result/${sessionId}`
 			: `${API_BASE}/api/download/${pantsCase}`;
-		const response = await fetch(downloadUrl);
-		const blob = await response.blob();
-		const url = window.URL.createObjectURL(blob);
+		try {
+			const response = await fetch(downloadUrl);
+			if (!response.ok) {
+				throw new Error(`Download failed (${response.status})`);
+			}
+			const blob = await response.blob();
+			const url = window.URL.createObjectURL(blob);
 
-		const link = document.createElement("a");
-		link.href = url;
-		link.download = `${caseId}_segmentations.zip`;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		window.URL.revokeObjectURL(url);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = `${caseId}_segmentations.zip`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			window.URL.revokeObjectURL(url);
+		} catch (e) {
+			console.error("Segmentation download failed:", e);
+			alert("Could not download segmentations. Please try again.");
+		}
 	};
 
 	const handleMouseClick = async (e: MouseEvent) => {
@@ -1148,7 +1161,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 			<OrganCheckbox
 				setCheckState={setCheckState}
 				checkState={checkState}
-				sessionId={sessionKey}
+				sessionId={sessionId}
 				setShowTaskDetails={setShowTaskDetails}
 				setShowOrganDetails={setShowOrganDetails}
 				showOrganDetails={showOrganDetails}

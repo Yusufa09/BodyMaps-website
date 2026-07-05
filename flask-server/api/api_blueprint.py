@@ -36,6 +36,19 @@ import requests  # ⭐ 只在這裡 import 一次 requests
 api_blueprint = Blueprint("api", __name__)
 last_session_check = datetime.now()
 
+import re
+import hmac
+import threading
+
+# Session/case ids come straight from client requests and are joined into
+# filesystem paths below. Reject anything that could escape the intended
+# directory (path separators, "..", drive letters) before it touches os.path.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def _is_safe_id(value) -> bool:
+    return bool(value) and isinstance(value, str) and bool(_SAFE_ID_RE.match(value)) and value not in (".", "..")
+
 def _load_metadata_cache():
     try:
         xlsx_path = os.path.join(Constants.PANTS_PATH, "metadata.xlsx")
@@ -82,7 +95,7 @@ def _require_worker_auth():
         return jsonify({"error": "WORKER_API_TOKEN is not configured on server"}), 500
 
     provided = (request.headers.get("X-Worker-Token", "") or "").strip()
-    if provided != expected:
+    if not hmac.compare_digest(provided, expected):
         return jsonify({"error": "Unauthorized worker token"}), 401
     return None
 
@@ -271,7 +284,9 @@ def upload():
         session_id = request.form.get('SESSION_ID')
         if not session_id:
             return jsonify({"error": "No session ID provided"}), 400
-        
+        if not _is_safe_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+
         base_path = os.path.join(Constants.SESSIONS_DIR_NAME, session_id)
         os.makedirs(base_path, exist_ok=True)
 
@@ -425,7 +440,6 @@ async def get_specific_segmentations(combined_labels_id):
 async def get_segmentations(combined_labels_id):
     nifti_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(combined_labels_id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
     labels = list(Constants.PREDEFINED_LABELS.values())
-    print("xdjs")
     # ?res=low → serve the precomputed low-res mask (paired with the low-res CT so the
     # overlay stays aligned). Falls back to full res below if it hasn't been generated.
     if (request.args.get('res') or '').strip().lower() == 'low':
@@ -437,23 +451,25 @@ async def get_segmentations(combined_labels_id):
             return response
 
     img = nib.load(nifti_path)
-    print("⚠️ Detected float label map, converting to uint8 for Cornerstone compatibility...")
 
     try:
+        serve_path = nifti_path
         if img.get_data_dtype() != np.uint8:
-            raw = np.asanyarray(img.dataobj)
+            # The source is a float label map; Cornerstone needs uint8. Write the
+            # converted copy to a sibling file and serve THAT — never overwrite the
+            # original ground-truth mask on disk (an HTTP GET must not mutate data).
+            converted_path = nifti_path.replace('.nii.gz', '_uint8.nii.gz')
+            if not os.path.exists(converted_path):
+                print("⚠️ Detected float label map, converting to uint8 for Cornerstone compatibility...")
+                raw = np.asanyarray(img.dataobj)
+                data = np.rint(raw).astype(np.uint8)
 
-            rounded = np.rint(raw)
-            data = rounded.astype(np.uint8)
-            data = data.astype(np.uint8)
+                new_img = nib.Nifti1Image(data, img.affine, header=img.header)
+                new_img.set_data_dtype(np.uint8)
+                nib.save(new_img, converted_path)
+            serve_path = converted_path
 
-            new_img = nib.Nifti1Image(data, img.affine, header=img.header)
-            new_img.set_data_dtype(np.uint8)
-
-            converted_path = nifti_path
-            nib.save(new_img, converted_path)
-
-        response = make_response(send_file(nifti_path, mimetype='application/gzip'))
+        response = make_response(send_file(serve_path, mimetype='application/gzip'))
         response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
         response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
         # response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
@@ -496,19 +512,25 @@ def download_segmentation_zip(id):
         print(f"❌ [Download Error] {e}")
         return jsonify({"error": "Internal server error"}), 500
 
-import threading
 import time
 
 inference_jobs = {}  # {session_id: {status, model, error, session_path, zip_path}}
+# Guards the read-modify-write in _set_inference_job: background segmentation
+# threads and request handlers touch inference_jobs concurrently, and the
+# get/update/set below is not atomic without a lock (updates would be lost).
+_inference_jobs_lock = threading.Lock()
 
 
 def _set_inference_job(session_id, **kwargs):
-    current = inference_jobs.get(session_id, {})
-    current.update(kwargs)
-    inference_jobs[session_id] = current
+    with _inference_jobs_lock:
+        current = inference_jobs.get(session_id, {})
+        current.update(kwargs)
+        inference_jobs[session_id] = current
 
 
 def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_path=None):
+    if not _is_safe_id(session_id):
+        return jsonify({"error": "Invalid session ID"}), 400
     session_path = os.path.join(SESSIONS_DIR, session_id)
     os.makedirs(session_path, exist_ok=True)
 
@@ -907,10 +929,17 @@ def download_pull_job_result(job_id):
 
 @api_blueprint.route('/get_result/<session_id>', methods=['GET'])
 def get_result(session_id):
+    if not _is_safe_id(session_id):
+        return jsonify({"error": "Invalid session ID"}), 400
     session_path = os.path.join(SESSIONS_DIR, session_id)
     zip_path = os.path.join(session_path, "auto_masks.zip")
 
-    wait_for_file(zip_path, timeout=30)
+    # Poll briefly for the archive. If it isn't ready, return 202 so the client
+    # can keep polling instead of receiving an uncaught TimeoutError → 500.
+    try:
+        wait_for_file(zip_path, timeout=30)
+    except TimeoutError:
+        return jsonify({"error": "Result not ready", "session_id": session_id}), 202
 
     response = send_file(
         zip_path,
@@ -994,6 +1023,13 @@ def upload_inference_chunk():
         if not all([session_id, chunk_index, total_chunks, chunk_file]):
             return jsonify({"error": "Missing parameters"}), 400
 
+        # session_id and chunk_index are both joined into a filesystem path below;
+        # reject anything non-numeric / traversal-y before it touches os.path.
+        if not _is_safe_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+        if not str(chunk_index).isdigit():
+            return jsonify({"error": "Invalid chunk index"}), 400
+
         session_folder = os.path.join(CHUNK_DIR, session_id)
         os.makedirs(session_folder, exist_ok=True)
 
@@ -1017,6 +1053,8 @@ def finalize_upload():
     """
     try:
         session_id = request.form.get("session_id")
+        if not _is_safe_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
         total_chunks = int(request.form.get("total_chunks"))
         output_filename = request.form.get("output_filename", "inference_input.gz")
         requested_bdmap_id = request.form.get("bdmap_id") or request.form.get("case_id")
@@ -1088,8 +1126,6 @@ def ping():
 def api_search():
     # return jsonify({"message": "pong"}), 200
     df = apply_filters(DF).copy()
-    sort_by  = (_arg("sort_by", "top") or "top").strip().lower()
-    sort_by  = (_arg("sort_by", "top") or "top").strip().lower()
     df = ensure_sort_cols(df)
 
     # ---- 排序參數 ----
