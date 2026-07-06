@@ -11,7 +11,20 @@ vi.mock("../helpers/compareViewer", () => ({ setupCompare }));
 import CompareViewerPage from "../routes/CompareViewerPage";
 
 beforeEach(() => {
-	setupCompare.mockResolvedValue({ setLinked: vi.fn(), destroy: vi.fn() });
+	setupCompare.mockResolvedValue({
+		setLinked: vi.fn(),
+		setSyncCursor: vi.fn(),
+		setSegVisible: vi.fn(),
+		setSegOpacity: vi.fn(),
+		setOrganVisibility: vi.fn(),
+		applyWindow: vi.fn(),
+		applyZoom: vi.fn(),
+		centerCursor: vi.fn(),
+		jumpToOrgan: vi.fn(),
+		refit: vi.fn(),
+		resetView: vi.fn(),
+		destroy: vi.fn(),
+	});
 	// resolveCtUrl does a HEAD probe; return not-ok so it falls back to the HF url.
 	global.fetch = vi.fn(async () => ({ ok: false, status: 404 })) as unknown as typeof fetch;
 });

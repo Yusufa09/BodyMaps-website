@@ -6,6 +6,21 @@
   color: #f4f5f7;
   font-family: "Space Grotesk", system-ui, sans-serif;
   overflow: hidden;
+
+  /* Re-declare the single viewer's design tokens so its vp-* classes (reused in the
+     settings panel + Class Map) render identically inside this page. */
+  --vp-bg: #08090b;
+  --vp-panel: rgba(255, 255, 255, 0.045);
+  --vp-panel-strong: rgba(255, 255, 255, 0.07);
+  --vp-border: rgba(255, 255, 255, 0.09);
+  --vp-border-strong: rgba(255, 255, 255, 0.16);
+  --vp-text: rgba(255, 255, 255, 0.92);
+  --vp-text-dim: rgba(255, 255, 255, 0.5);
+  --vp-text-faint: rgba(255, 255, 255, 0.36);
+  --vp-hover: rgba(255, 255, 255, 0.1);
+  --vp-accent: #6ea8fe;
+  --vp-font: "Space Grotesk", system-ui, sans-serif;
+  --vp-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .cmv__bar {
@@ -60,68 +75,16 @@
 
 /* Body = settings sidebar + the viewport grid. */
 .cmv__body { flex: 1; display: flex; min-height: 0; }
+/* Layout only — the vp-sidebar class (from the single viewer) supplies the backdrop,
+   border and scrollbar so the panel is visually identical to the single viewer. */
 .cmv__settings {
-  width: 224px;
+  width: 256px;
   flex-shrink: 0;
   overflow-y: auto;
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.015);
-}
-.cmv-panel {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.cmv-panel__title {
-  font-family: "Space Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-}
-.cmv-panel__btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.85);
-  border-radius: 7px;
-  padding: 7px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.cmv-panel__btn:hover { background: rgba(255, 255, 255, 0.12); }
-.cmv-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.cmv-seg__btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.75);
-  border-radius: 7px;
-  padding: 6px 4px;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.cmv-seg__btn.is-active { background: #fff; color: #08090b; border-color: #fff; font-weight: 600; }
-.cmv-slider {
-  display: grid;
-  grid-template-columns: 46px 1fr 40px;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-}
-.cmv-slider input[type="range"] { width: 100%; accent-color: #2563eb; }
-.cmv-slider em {
-  font-style: normal;
-  font-family: "Space Mono", monospace;
-  font-size: 10px;
-  text-align: right;
-  color: rgba(255, 255, 255, 0.55);
 }
 .cmv__toggle {
   display: flex;

@@ -11,6 +11,7 @@ import {
 	Enums,
 	RenderingEngine,
 	type Types,
+	cache,
 	eventTarget,
 	imageLoader,
 	init as coreInit,
@@ -60,7 +61,16 @@ export type CompareHandle = {
 	setSyncCursor: (sync: boolean) => void;
 	setSegVisible: (visible: boolean) => void;
 	setSegOpacity: (alpha: number) => void;
+	// Per-organ visibility: checkState[i] toggles segment index i (1-based) on both cases.
+	setOrganVisibility: (checkState: boolean[]) => void;
 	applyWindow: (width: number, center: number) => void;
+	applyZoom: (zoom: number) => void;
+	// Center each case's planes on that case's crosshair (mirrors the single viewer).
+	centerCursor: () => void;
+	// Move each case's crosshair to that organ's centroid (label = segment index).
+	jumpToOrgan: (label: number) => void;
+	// Re-fit the viewports after the surrounding grid changes size (view-mode switch).
+	refit: () => void;
 	resetView: () => void;
 	destroy: () => void;
 };
@@ -88,6 +98,49 @@ function buildColorLUT(): ColorLUT {
 
 const sliceCount = (vp: SliceViewport): number =>
 	vp.getNumberOfSlices?.() ?? vp.getImageData()?.dimensions?.[2] ?? 1;
+
+// Per-label centroids (world mm) for a segmentation volume — the "jump to organ" target.
+// Same approach as the single viewer's getOrganCentroids, but keyed by segmentation id so
+// each case is computed from its own volume/geometry.
+function computeCentroids(segmentationId: string): Record<number, [number, number, number]> | null {
+	const volume = cache.getVolume(segmentationId);
+	const vm = volume?.voxelManager;
+	if (!volume || !vm) return null;
+
+	const [dimX, dimY] = vm.dimensions;
+	const sliceSize = dimX * dimY;
+	const sums = new Map<number, { x: number; y: number; z: number; n: number }>();
+	const add = (label: number, i: number, j: number, k: number) => {
+		if (!label) return; // skip background
+		let s = sums.get(label);
+		if (!s) { s = { x: 0, y: 0, z: 0, n: 0 }; sums.set(label, s); }
+		s.x += i; s.y += j; s.z += k; s.n++;
+	};
+
+	let data: ArrayLike<number> | undefined;
+	try { data = vm.getCompleteScalarDataArray?.(); } catch { /* fall through */ }
+	if (data && data.length) {
+		for (let idx = 0; idx < data.length; idx++) {
+			const label = data[idx];
+			if (!label) continue;
+			const k = (idx / sliceSize) | 0;
+			const rem = idx - k * sliceSize;
+			const j = (rem / dimX) | 0;
+			add(label, rem - j * dimX, j, k);
+		}
+	} else {
+		vm.forEach((voxel) =>
+			add(Number(voxel.value), voxel.pointIJK[0], voxel.pointIJK[1], voxel.pointIJK[2])
+		);
+	}
+
+	const out: Record<number, [number, number, number]> = {};
+	for (const [label, s] of sums) {
+		const w = volume.imageData?.indexToWorld([s.x / s.n, s.y / s.n, s.z / s.n]);
+		if (w) out[label] = [w[0], w[1], w[2]];
+	}
+	return out;
+}
 
 let currentEngine: RenderingEngine | null = null;
 
@@ -274,6 +327,13 @@ export async function setupCompare(els: CompareElements, src: CompareSources): P
 
 	const allVps = [A.ax, A.sag, A.cor, B.ax, B.sag, B.cor];
 
+	// Centroids are computed once per case (lazily on first jump) and reused thereafter.
+	const centroidCache = new Map<string, Record<number, [number, number, number]> | null>();
+	const centroidsFor = (segId: string) => {
+		if (!centroidCache.has(segId)) centroidCache.set(segId, computeCentroids(segId));
+		return centroidCache.get(segId) ?? null;
+	};
+
 	return {
 		setLinked(next) {
 			linked = next;
@@ -308,6 +368,30 @@ export async function setupCompare(els: CompareElements, src: CompareSources): P
 			}
 			engine.renderViewports(allVps);
 		},
+		setOrganVisibility(checkState) {
+			// checkState[0] is the background (always on); indices 1..N are organ labels.
+			// Apply the same per-organ visibility to both cases' segmentations.
+			for (const [segId, vps] of [
+				[A.seg, [A.ax, A.sag, A.cor]],
+				[B.seg, [B.ax, B.sag, B.cor]],
+			] as const) {
+				for (let i = 1; i < checkState.length; i++) {
+					for (const vpId of vps) {
+						try {
+							tools.segmentation.config.visibility.setSegmentIndexVisibility(
+								vpId,
+								{ segmentationId: segId, type: SegmentationRepresentations.Labelmap },
+								i,
+								checkState[i]
+							);
+						} catch {
+							/* segmentation may be absent (dev checkout without masks) */
+						}
+					}
+				}
+			}
+			engine.renderViewports(allVps);
+		},
 		applyWindow(width, center) {
 			const low = center - width / 2;
 			const high = center + width / 2;
@@ -321,6 +405,64 @@ export async function setupCompare(els: CompareElements, src: CompareSources): P
 				tf.updateRange();
 				vp.render();
 			}
+		},
+		applyZoom(zoom) {
+			for (const vpId of allVps) {
+				// setZoom is a volume-viewport API; guard in case a viewport type lacks it.
+				const vp = engine.getViewport(vpId) as { setZoom?: (z: number) => void; render?: () => void };
+				vp?.setZoom?.(zoom);
+				vp?.render?.();
+			}
+		},
+		centerCursor() {
+			// For each case, snap its three planes onto that case's crosshair focal point.
+			for (const [tgId, vps] of [
+				[A.tg, [A.ax, A.sag, A.cor]],
+				[B.tg, [B.ax, B.sag, B.cor]],
+			] as const) {
+				const tool = tools.ToolGroupManager.getToolGroup(tgId)?.getToolInstance(
+					tools.CrosshairsTool.toolName
+				) as { toolCenter?: [number, number, number] } | undefined;
+				const toolCenter = tool?.toolCenter;
+				if (!toolCenter) continue;
+				for (const vpId of vps) {
+					const vp = engine.getViewport(vpId) as unknown as {
+						setViewReference?: (r: { FrameOfReferenceUID: string; cameraFocalPoint: number[] }) => void;
+						render?: () => void;
+					};
+					vp?.setViewReference?.({ FrameOfReferenceUID: "1.2.840.10008.1.4", cameraFocalPoint: toolCenter });
+					vp?.render?.();
+				}
+			}
+		},
+		jumpToOrgan(label) {
+			// Move each case's crosshair to that case's own centroid for the organ. Guard the
+			// proportional-scroll mirror so linking doesn't drag B's axial back to A's fraction.
+			syncing = true;
+			for (const [segId, tgId, vps] of [
+				[A.seg, A.tg, [A.ax, A.sag, A.cor]],
+				[B.seg, B.tg, [B.ax, B.sag, B.cor]],
+			] as const) {
+				const mm = centroidsFor(segId)?.[label];
+				if (!mm) continue; // organ absent in this case
+				const tool = tools.ToolGroupManager.getToolGroup(tgId)?.getToolInstance(
+					tools.CrosshairsTool.toolName
+				) as { setToolCenter?: (mm: number[], suppress?: boolean) => void } | undefined;
+				if (!tool?.setToolCenter) continue;
+				tool.setToolCenter(mm, true); // suppressEvents → no crosshair/cursor-sync feedback
+				engine.renderViewports([...vps]);
+			}
+			setTimeout(() => { syncing = false; }, 0);
+		},
+		refit() {
+			// The grid changed size (view-mode switch) — re-measure and re-fit each pane so
+			// the CT fills its (now differently sized) cell instead of staying at the old fit.
+			engine.resize(true, false);
+			for (const vpId of allVps) {
+				const vp = engine.getViewport(vpId) as { resetCamera?: () => void };
+				vp?.resetCamera?.();
+			}
+			engine.renderViewports(allVps);
 		},
 		resetView() {
 			for (const vpId of allVps) {
