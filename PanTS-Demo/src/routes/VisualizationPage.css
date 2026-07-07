@@ -723,6 +723,9 @@
 .vp-pane--sagittal { --pane-accent: #eab308; }
 .vp-pane--coronal  { --pane-accent: #22c55e; }
 .vp-pane--render   { --pane-accent: #6ea8fe; }
+/* Solid fill so the fullscreen 3D overlay (viewMode "3d") never shows the MPR
+   grid bleeding through while the mesh/volume view is still initializing. */
+.vp-pane--render, .vp-pane--render .canvas { background: var(--vp-bg, #08090b); }
 
 /* ---- Loading overlay (lightweight; no WebGL so it never competes with the
    viewer's NiiVue/Cornerstone contexts) ---- */

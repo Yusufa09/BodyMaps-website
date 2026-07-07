@@ -91,10 +91,17 @@ const viewportId2 = "CT_NIFTI_SAGITTAL";
 const viewportId3 = "CT_NIFTI_CORONAL";
 const MPR_VIEWPORT_IDS = [viewportId1, viewportId2, viewportId3];
 
-// Shaded volume rendering (3D pane "Volume" mode) — own viewport + tool group so
-// trackball rotation never fights the MPR crosshair bindings.
+// Shaded volume rendering (3D pane "Volume" mode) — its OWN rendering engine,
+// viewport and tool group. A separate engine is essential: sharing the MPR
+// engine means enabling/disabling this viewport (or its resize) repacks the
+// shared offscreen canvas and corrupts the axial/sagittal/coronal viewports.
 const volume3DViewportId = "CT_VOLUME_3D";
+const volume3DEngineId = "volume3d_engine";
 const volume3DToolGroupId = "volume3DToolGroup";
+
+function _getVolume3DEngine(): RenderingEngine {
+  return (getRenderingEngine(volume3DEngineId) as RenderingEngine | undefined) ?? new RenderingEngine(volume3DEngineId);
+}
 
 let currentRenderingEngine: RenderingEngine | null = null;
 // The CT volume currently on the MPR viewports (changes when the progressive
@@ -228,7 +235,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     const mainNiftiURL = ctUrl;
     const segmentationURL = segUrl;
     ToolGroupManager.destroyToolGroup(toolGroupId);
-    ToolGroupManager.destroyToolGroup(volume3DToolGroupId); // stale 3D viewport refs
+    disableVolume3D(); // tear down any prior case's 3D engine/tool group
     const toolGroup = ToolGroupManager.createToolGroup(toolGroupId);
     if (!toolGroup) {
         throw new Error("Failed to create tool group");
@@ -854,11 +861,11 @@ export async function upgradeCtVolume(fullResCtUrl: string): Promise<string | nu
     }
     await _rebuildSegmentationRepresentations();
 
-    // If the shaded 3D volume view is open, move it to the new volume too.
+    // If the shaded 3D volume view is open (its own engine), move it too.
     try {
-      const vp3d = engine.getViewport(volume3DViewportId);
-      if (vp3d) {
-        await setVolumesForViewports(engine, [{ volumeId: newVolumeId }], [volume3DViewportId]);
+      const engine3d = getRenderingEngine(volume3DEngineId) as RenderingEngine | undefined;
+      if (engine3d?.getViewport(volume3DViewportId)) {
+        await setVolumesForViewports(engine3d, [{ volumeId: newVolumeId }], [volume3DViewportId]);
         applyVolume3DPreset(_lastVolume3DPreset);
       }
     } catch {
@@ -894,7 +901,7 @@ let _lastVolume3DPreset: string = VOLUME_3D_PRESETS[0].name;
 
 export function applyVolume3DPreset(presetName: string) {
   _lastVolume3DPreset = presetName;
-  const engine = currentRenderingEngine;
+  const engine = getRenderingEngine(volume3DEngineId) as RenderingEngine | undefined;
   if (!engine) return;
   try {
     const viewport = engine.getViewport(volume3DViewportId) as any;
@@ -909,14 +916,15 @@ export async function enableVolume3D(
   element: HTMLDivElement,
   presetName: string = _lastVolume3DPreset
 ): Promise<boolean> {
-  const engine = currentRenderingEngine;
-  if (!engine || !_currentCtVolumeId) return false;
+  if (!_currentCtVolumeId) return false;
   try {
     try {
       cornerstoneTools.addTool(TrackballRotateTool);
     } catch {
       /* already registered */
     }
+    // Dedicated engine — never share the MPR engine (see the note by its id).
+    const engine = _getVolume3DEngine();
     engine.enableElement({
       viewportId: volume3DViewportId,
       type: Enums.ViewportType.VOLUME_3D,
@@ -926,24 +934,22 @@ export async function enableVolume3D(
         background: [0.03, 0.035, 0.043],
       },
     });
-    let toolGroup = ToolGroupManager.getToolGroup(volume3DToolGroupId);
-    if (!toolGroup) {
-      toolGroup = ToolGroupManager.createToolGroup(volume3DToolGroupId);
-      if (!toolGroup) return false;
-      toolGroup.addTool(TrackballRotateTool.toolName);
-      toolGroup.addTool(ZoomTool.toolName);
-      toolGroup.addTool(PanTool.toolName);
-      toolGroup.setToolActive(TrackballRotateTool.toolName, {
-        bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
-      });
-      toolGroup.setToolActive(ZoomTool.toolName, {
-        bindings: [{ mouseButton: csToolsEnums.MouseBindings.Wheel }],
-      });
-      toolGroup.setToolActive(PanTool.toolName, {
-        bindings: [{ mouseButton: csToolsEnums.MouseBindings.Auxiliary }],
-      });
-    }
-    toolGroup.addViewport(volume3DViewportId, renderingEngineId);
+    ToolGroupManager.destroyToolGroup(volume3DToolGroupId); // stale viewport ref from a prior open
+    const toolGroup = ToolGroupManager.createToolGroup(volume3DToolGroupId);
+    if (!toolGroup) return false;
+    toolGroup.addTool(TrackballRotateTool.toolName);
+    toolGroup.addTool(ZoomTool.toolName);
+    toolGroup.addTool(PanTool.toolName);
+    toolGroup.setToolActive(TrackballRotateTool.toolName, {
+      bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
+    });
+    toolGroup.setToolActive(ZoomTool.toolName, {
+      bindings: [{ mouseButton: csToolsEnums.MouseBindings.Wheel }],
+    });
+    toolGroup.setToolActive(PanTool.toolName, {
+      bindings: [{ mouseButton: csToolsEnums.MouseBindings.Auxiliary }],
+    });
+    toolGroup.addViewport(volume3DViewportId, volume3DEngineId);
     await setVolumesForViewports(engine, [{ volumeId: _currentCtVolumeId }], [volume3DViewportId]);
     applyVolume3DPreset(presetName);
     const viewport = engine.getViewport(volume3DViewportId);
@@ -957,20 +963,17 @@ export async function enableVolume3D(
 }
 
 export function disableVolume3D() {
-  const engine = currentRenderingEngine;
-  if (!engine) return;
   try {
-    ToolGroupManager.getToolGroup(volume3DToolGroupId)?.removeViewports(
-      renderingEngineId,
-      volume3DViewportId
-    );
+    ToolGroupManager.destroyToolGroup(volume3DToolGroupId);
   } catch {
     /* tool group already gone */
   }
+  // Destroy the whole dedicated engine so its canvas/GL context is released and
+  // the next open starts clean. This can't touch the MPR engine.
   try {
-    engine.disableElement(volume3DViewportId);
+    (getRenderingEngine(volume3DEngineId) as RenderingEngine | undefined)?.destroy();
   } catch {
-    /* viewport already gone */
+    /* engine already gone */
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
