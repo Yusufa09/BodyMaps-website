@@ -29,7 +29,6 @@ type Props = {
 	setCheckState: React.Dispatch<React.SetStateAction<boolean[]>>;
 	checkState: boolean[];
 	sessionId: string | undefined;
-	setShowTaskDetails: React.Dispatch<React.SetStateAction<boolean>>;
 	setShowOrganDetails: React.Dispatch<React.SetStateAction<boolean>>;
 	showOrganDetails: boolean;
 	onJumpToOrgan?: (label: number) => void;
@@ -237,7 +236,6 @@ function OrganCheckbox({
 	setCheckState,
 	checkState,
 	labelColorMap,
-	setShowTaskDetails,
 	setShowOrganDetails,
 	showOrganDetails,
 	onJumpToOrgan,
@@ -266,10 +264,7 @@ function OrganCheckbox({
 			<div className="flex gap-2 items-center justify-start">
 				<IconArrowLeft
 					className="vp-organs__back"
-					onClick={() => {
-						setShowTaskDetails(false);
-						setShowOrganDetails(false);
-					}}
+					onClick={() => setShowOrganDetails(false)}
 					/>
 			<div className="vp-organs__title">Organs</div>
 			</div>

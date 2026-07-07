@@ -14,6 +14,7 @@ import {
     IconSettings,
     IconShare,
     IconSquareDashed,
+    IconStack2,
     IconTrash
 } from "@tabler/icons-react";
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -21,14 +22,11 @@ import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { SegmentationMeshViewer } from "../components/MeshViewer";
-import OpacitySlider from "../components/OpacitySlider/OpacitySlider";
 import OrganCheckbox from "../components/OrganCheckbox";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
 import AISidebar from "../components/AIAssistant/AISidebar";
 import { buildViewerActions } from "../components/AIAssistant/assistantActions";
 import SnakeGame from "../components/SnakeGame/SnakeGame";
-import WindowingSlider from "../components/WindowingSlider/WindowingSlider";
-import ZoomHandle from "../components/zoomHandle";
 import {
     API_BASE,
     APP_CONSTANTS,
@@ -38,6 +36,7 @@ import {
 import {
     ANGLE_TOOL,
     captureViewportImages,
+    centerOnCursor,
     clearMeasurements,
     ELLIPSE_TOOL,
     getCrosshairMm,
@@ -52,10 +51,12 @@ import {
     setActiveMeasurementTool,
     setToolGroupOpacity,
     setVisibilities,
+    setZoom,
     subscribeToCrosshairChanges,
     subscribeToMeasurementChanges,
     subscribeToVolumeProgress,
     toggleCrosshairTool,
+    zoomToFit,
     type MeasurementToolName
 } from "../helpers/CornerstoneNifti2";
 import MeasurementPanel from "../components/MeasurementPanel/MeasurementPanel";
@@ -211,14 +212,18 @@ function VisualizationPage() {
 	const [dlPct, setDlPct] = useState<number | null>(null);
 	const [dlDone, setDlDone] = useState(false);
 	const dlTotalsRef = useRef<Record<string, number>>({});
-	const [showTaskDetails, setShowTaskDetails] = useState(true);
+	// The tools live in a top toolbar (PYCAD-style) that sits above the viewports in
+	// normal flow; the gear button shows/hides it. Hidden by default — a single
+	// floating gear reveals it — so the viewer opens clean/full-bleed.
+	const [showToolbar, setShowToolbar] = useState(false);
+	const topbarRef = useRef<HTMLDivElement>(null);
+	const stageRef = useRef<HTMLDivElement>(null);
 	const [showOrganDetails, setShowOrganDetails] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [crosshairMm, setCrosshairMm] = useState<[number, number, number] | null>(null);
 	const [labelColorMap, _setLabelColorMap] = useState<{ [key: number]: Color }>(
 		segmentation_category_colors
 	);
-	const [zoomMode, setZoomMode] = useState(false);
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
 	// Which measurement tool owns the primary mouse button (null = navigation/crosshair).
@@ -235,8 +240,9 @@ function VisualizationPage() {
 		setMeasureMenuOpen((open) => {
 			const next = !open;
 			if (next && measureBtnRef.current) {
+				// Open the flyout just below the toolbar button.
 				const r = measureBtnRef.current.getBoundingClientRect();
-				setMeasureMenuPos({ top: r.top, left: r.right + 10 });
+				setMeasureMenuPos({ top: r.bottom + 8, left: r.left });
 			}
 			return next;
 		});
@@ -759,6 +765,28 @@ function VisualizationPage() {
 		};
 	}, [viewMode, renderingEngine, NV, viewportIds]);
 
+	// Apply zoom to the Cornerstone viewports whenever the toolbar slider changes.
+	// (Previously ZoomHandle owned this side effect; the slider now lives in the toolbar.)
+	useEffect(() => {
+		if (!renderingEngine || !viewportIds.length) return;
+		setZoom(zoomLevel);
+	}, [zoomLevel, renderingEngine, viewportIds]);
+
+	// Keep the WebGL viewports fitted to the stage as it resizes — when the toolbar is
+	// shown/hidden (stage grows/shrinks), the toolbar wraps, or the window resizes.
+	// keepCamera=true preserves the user's zoom/pan (unlike the view-mode switch above,
+	// which deliberately re-fits each pane).
+	useEffect(() => {
+		const el = stageRef.current;
+		if (!el || typeof ResizeObserver === "undefined") return;
+		const ro = new ResizeObserver(() => {
+			renderingEngine?.resize(true, true);
+			NV?.resizeListener();
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [renderingEngine, NV]);
+
 	const handlePresetClick = (preset: typeof CT_PRESETS[number]) => {
 		setActivePreset(preset.name);
 		handleWindowChange(preset.width, preset.center);
@@ -811,12 +839,6 @@ function VisualizationPage() {
 		// updateGeneralOpacity(render_ref, value / 100);
 	};
 
-	const handleOpacityOnFormSubmit = (value: number) => {
-		setOpacityValue(value);
-		setToolGroupOpacity(value / 100);
-		sessionRef.current?.log("opacity", `Mask opacity set to ${value}%`, 1200);
-		// updateGeneralOpacity(render_ref, value / 100);
-	};
 
 	// Per-organ volume (cm³) + mean HU — the existing quantitative layer the backend
 	// already computes for the PDF report, surfaced inline. Fetched once, on first open.
@@ -965,116 +987,123 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 				width: "100vw",
 			}}
 		>
-			<div style={{ position: "relative" }}>
-				{/* Branded viewer top bar — pointer-events-none so CT pane clicks pass through */}
-				<div className="pointer-events-none absolute top-0 left-0 z-10 flex w-full items-center justify-between bg-gradient-to-b from-black/75 via-black/35 to-transparent px-6 pt-3 pb-8">
-					{/* spacer keeps the wordmark clear of the settings/home buttons */}
-					<div className="pointer-events-auto flex w-32 shrink-0 justify-end" />
-				</div>
-				<div className="sidebar" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50 }}>
-					<div>
-						<div className="flex" style={{ position: 'fixed', top: 0, left: 0, zIndex: 50, padding: '16px 0 0 16px', gap: '8px' }}>
+			{/* ---- Top toolbar (PYCAD-style). Lives in normal flow, so it sits ABOVE the
+			     viewports and never overlays them. Shown/hidden by the gear button. ---- */}
+			{showToolbar && (
+				<div className="vp-topbar" ref={topbarRef}>
+					{/* Gear (hides the bar) + home, in-flow so there's no dead corner space */}
+					<button
+						className="vp-iconbtn"
+						title="Hide toolbar"
+						aria-label="Toggle toolbar"
+						onClick={() => setShowToolbar(false)}
+					>
+						<IconSettings size={20} color="white" />
+					</button>
+					<button
+						className="vp-iconbtn"
+						title="Back to dashboard"
+						aria-label="Back to dashboard"
+						onClick={() => navBack()}
+					>
+						<IconHome size={20} color="white" />
+					</button>
+
+					<span className="vp-tb-divider" />
+
+					{/* Case / session identity */}
+					<div className="vp-tb-id">
+						<span className="vp-tb-id__eyebrow">{sessionId ? "Session" : "Case"}</span>
+						<span className="vp-tb-id__val">{caseId}</span>
+					</div>
+
+					<span className="vp-tb-divider" />
+
+					{/* View layout */}
+					<div className="vp-seg vp-tb-seg" role="group" aria-label="View layout">
+						{([
+							{ mode: "mpr" as ViewMode, label: "⊞ MPR" },
+							{ mode: "axial" as ViewMode, label: "Axial" },
+							{ mode: "sagittal" as ViewMode, label: "Sag" },
+							{ mode: "coronal" as ViewMode, label: "Cor" },
+							{ mode: "3d" as ViewMode, label: "3D" },
+						]).map(({ mode, label }) => (
 							<button
-								className="vp-iconbtn"
-								title="Toggle controls"
-								aria-label="Toggle controls"
-								onClick={() => {
-									// Opening the controls must also close the Organs panel, otherwise the
-									// two slide-in panels stack on top of each other.
-									setShowOrganDetails(false);
-									setShowTaskDetails((prev) => !prev);
-								}}
-							>
-								<IconSettings size={20} color="white" />
-							</button>
+								key={mode}
+								onClick={() => setViewMode(mode)}
+								className={`vp-seg__btn ${viewMode === mode ? "vp-seg__btn--active" : ""}`}
+							>{label}</button>
+						))}
+					</div>
+
+					<span className="vp-tb-divider" />
+
+					{/* CT window presets */}
+					<div className="vp-seg vp-tb-seg" role="group" aria-label="CT window presets">
+						{CT_PRESETS.map((preset) => (
 							<button
-								className="vp-iconbtn"
-								title="Back to dashboard"
-								aria-label="Back to dashboard"
-								onClick={() => navBack()}
-							>
-								<IconHome size={20} color="white" />
-							</button>
-						</div>
-						<div
-							className={`vp-sidebar w-64 h-dvh p-4 pt-16 gap-3 flex flex-col overflow-y-auto transition-all duration-300 ease-in-out origin-left ${showTaskDetails ? "translate-x-[-64rem]" : "translate-x-0"}`}
-							style={{ position: 'fixed', top: 0, left: 0, zIndex: 49 }}
-						>
-							{/* Toggle dropdown */}
+								key={preset.name}
+								onClick={() => handlePresetClick(preset)}
+								className={`vp-seg__btn ${activePreset === preset.name ? "vp-seg__btn--active" : ""}`}
+							>{preset.name}</button>
+						))}
+					</div>
 
-							{!showTaskDetails && (
-								<>
-									{zoomMode ? null : (
-										<div className="flex flex-col gap-1 items-start text-left px-1">
-											<span className="vp-case-eyebrow">{sessionId ? "Session" : "Case"}</span>
-											<span className="vp-case-id">{caseId}</span>
-										</div>
-									)}
+					<span className="vp-tb-divider" />
 
-									<>
-										{/* View mode */}
-										<div className="vp-panel">
-											<div className="vp-panel__title">View</div>
-											<div className="vp-seg">
-												{([
-													{ mode: "mpr" as ViewMode, label: "⊞ MPR" },
-													{ mode: "axial" as ViewMode, label: "Axial" },
-													{ mode: "sagittal" as ViewMode, label: "Sag" },
-													{ mode: "coronal" as ViewMode, label: "Cor" },
-													{ mode: "3d" as ViewMode, label: "3D" },
-												]).map(({ mode, label }) => (
-													<button
-														key={mode}
-														onClick={() => setViewMode(mode)}
-														className={`vp-seg__btn ${viewMode === mode ? "vp-seg__btn--active" : ""}`}
-													>{label}</button>
-												))}
-											</div>
-										</div>
+					{/* Compact adjustments: opacity, brightness, contrast, zoom */}
+					<div className="vp-tb-adjust">
+						<label className="vp-tb-slider" title="Mask opacity">
+							<span className="vp-tb-slider__label">Opac</span>
+							<input
+								type="range" min="0" max="100" step="1" className="vp-range"
+								aria-label="Label opacity"
+								value={opacityValue}
+								onChange={handleOpacityOnSliderChange}
+							/>
+							<span className="vp-tb-slider__val">{Math.round(opacityValue)}%</span>
+						</label>
+						<label className="vp-tb-slider" title="Brightness (window level)">
+							<span className="vp-tb-slider__label">Brt</span>
+							<input
+								type="range" min="-1000" max="1000" step="1" className="vp-range"
+								aria-label="Brightness"
+								value={windowCenter * -1}
+								onChange={(e) => handleWindowChange(null, Number(e.target.value) * -1)}
+							/>
+						</label>
+						<label className="vp-tb-slider" title="Contrast (window width)">
+							<span className="vp-tb-slider__label">Con</span>
+							<input
+								type="range" min="1" max="2000" step="1" className="vp-range"
+								aria-label="Contrast"
+								value={windowWidth}
+								onChange={(e) => handleWindowChange(Number(e.target.value), null)}
+							/>
+						</label>
+						<label className="vp-tb-slider" title="Zoom">
+							<span className="vp-tb-slider__label">Zoom</span>
+							<input
+								type="range" min="0.5" max="2" step="0.05" className="vp-range"
+								aria-label="Zoom"
+								value={zoomLevel}
+								onChange={(e) => setZoomLevel(Number(e.target.value))}
+							/>
+							<span className="vp-tb-slider__val">{zoomLevel.toFixed(1)}×</span>
+						</label>
+						<button className="vp-tb-mini" onClick={() => centerOnCursor()} title="Center on crosshair">Center</button>
+						<button
+							className="vp-tb-mini"
+							onClick={() => { zoomToFit(); setZoomLevel(1); }}
+							title="Reset zoom & pan"
+						>Reset</button>
+					</div>
 
-										{/* CT Window presets */}
-										<div className="vp-panel">
-											<div className="vp-panel__title">CT Window</div>
-											<div className="vp-seg">
-												{CT_PRESETS.map((preset) => (
-													<button
-														key={preset.name}
-														onClick={() => handlePresetClick(preset)}
-														className={`vp-seg__btn ${activePreset === preset.name ? "vp-seg__btn--active" : ""}`}
-													>{preset.name}</button>
-												))}
-											</div>
-										</div>
+					<span className="vp-tb-divider" />
 
-										<OpacitySlider
-											opacityValue={opacityValue}
-											handleOpacityOnSliderChange={
-												handleOpacityOnSliderChange
-											}
-											handleOpacityOnFormSubmit={handleOpacityOnFormSubmit}
-											setShowOrganDetails={setShowOrganDetails}
-											setShowTaskDetails={setShowTaskDetails}
-										/>
-
-										<WindowingSlider
-											windowWidth={windowWidth}
-											windowCenter={windowCenter}
-											onWindowChange={handleWindowChange}
-										/>
-										<ZoomHandle
-											submitted={zoomLevel}
-											setSubmitted={setZoomLevel}
-											setZoomMode={setZoomMode}
-										/>
-									</>
-
-									{/* Report Download Zoom Buttons */}
-									{/* Opacity & Windowing Sliders */}
-									{/* {!zoomMode ? ( */}
-									<>
-
-										<div className="vp-toolrow">
-											<button
+					{/* Tools */}
+									<div className="vp-toolrow vp-tb-tools">
+										<button
 												className={`vp-tool ${crosshairToolActive && !activeMeasureTool ? "vp-tool--active" : ""}`}
 												onClick={() => {
 													setActiveMeasureTool(null);
@@ -1244,14 +1273,37 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 													<span className="vp-tool__tip">{isHd ? "Full res · click for fast" : "Load full resolution"}</span>
 												</button>
 											)}
+											{/* Organs panel opener (was the "Class Map" button) */}
+											<button
+												className={`vp-tool ${showOrganDetails ? "vp-tool--active" : ""}`}
+												onClick={() => {
+													setShowStats(false);
+													setShowMeasurePanel(false);
+													setShowOrganDetails(true);
+												}}
+												aria-label="Organs"
+											>
+												<IconStack2 size={20} color={showOrganDetails ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Organs</span>
+											</button>
 										</div>
-									</>
-									{/* ) : null} */}
-								</>
-							)}
-						</div>
-					</div>
 				</div>
+			)}
+
+			{/* When the toolbar is hidden, a single floating gear reveals it. */}
+			{!showToolbar && (
+				<button
+					className="vp-floating-gear vp-iconbtn"
+					title="Show toolbar"
+					aria-label="Toggle toolbar"
+					onClick={() => setShowToolbar(true)}
+				>
+					<IconSettings size={20} color="white" />
+				</button>
+			)}
+
+			{/* Stage — fills the space below the toolbar; the viewports live here. */}
+			<div className="vp-stage" ref={stageRef}>
 
 				{/* {
           loading ?
@@ -1364,7 +1416,6 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 				setCheckState={setCheckState}
 				checkState={checkState}
 				sessionId={sessionId}
-				setShowTaskDetails={setShowTaskDetails}
 				setShowOrganDetails={setShowOrganDetails}
 				showOrganDetails={showOrganDetails}
 				labelColorMap={labelColorMap}

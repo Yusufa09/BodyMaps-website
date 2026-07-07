@@ -132,8 +132,8 @@ describe("Organ Statistics — population percentiles", () => {
 	it("shows each organ's volume percentile vs the dataset for the case's sex/age", async () => {
 		renderViewer();
 
-		// The toolbar is hidden until the controls panel is opened.
-		fireEvent.click(screen.getByLabelText("Toggle controls"));
+		// The toolbar is hidden by default; reveal it, then open Organ statistics.
+		fireEvent.click(screen.getByLabelText("Toggle toolbar"));
 		fireEvent.click(screen.getByLabelText("Organ statistics"));
 
 		// The %ile column header only appears once the norms asset has loaded.
@@ -157,8 +157,8 @@ describe("Organ Statistics — population percentiles", () => {
 
 	it("falls back to an em dash when an organ has no reference or an invalid volume", async () => {
 		renderViewer();
-		// The toolbar is hidden until the controls panel is opened.
-		fireEvent.click(screen.getByLabelText("Toggle controls"));
+		// The toolbar is hidden by default; reveal it, then open Organ statistics.
+		fireEvent.click(screen.getByLabelText("Toggle toolbar"));
 		fireEvent.click(screen.getByLabelText("Organ statistics"));
 		await screen.findByText("%ile");
 

@@ -37,6 +37,10 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	renameMeasurement: vi.fn(),
 	removeMeasurement: vi.fn(),
 	jumpToMeasurement: vi.fn(() => null),
+	// Zoom controls now live in the top toolbar (previously ZoomHandle)
+	setZoom: vi.fn(),
+	centerOnCursor: vi.fn(),
+	zoomToFit: vi.fn(),
 	LENGTH_TOOL: "Length",
 	PROBE_TOOL: "Probe",
 	ROI_TOOL: "RectangleROI",

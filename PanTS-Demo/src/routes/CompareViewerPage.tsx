@@ -342,7 +342,6 @@ export default function CompareViewerPage() {
 						setCheckState={setOrganVisible}
 						checkState={organVisible}
 						sessionId={undefined}
-						setShowTaskDetails={setShowTaskDetails}
 						setShowOrganDetails={setShowOrganDetails}
 						showOrganDetails={showOrganDetails}
 						labelColorMap={segmentation_category_colors}
