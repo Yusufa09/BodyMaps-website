@@ -14,6 +14,7 @@ import {
   type RecentUpload,
 } from '../helpers/recentUploads';
 import Header from '../components/Header';
+import { looksLikeDicom, setLocalDicomFiles } from '../helpers/dicomLocal';
 
 const parseApiResponse = async (res: Response): Promise<any> => {
   const contentType = res.headers.get("content-type") || "";
@@ -30,7 +31,22 @@ const parseApiResponse = async (res: Response): Promise<any> => {
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dicomInputRef = useRef<HTMLInputElement | null>(null);
   const inferencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Local DICOM: stash the picked folder's files and open the viewer's /dicom
+  // route. Nothing is uploaded — the viewer reads the File objects directly.
+  const handleDicomFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-picking the same folder later
+    const candidates = files.filter(looksLikeDicom);
+    if (!candidates.length) {
+      alert("No DICOM files (.dcm) found in the selected folder.");
+      return;
+    }
+    setLocalDicomFiles(candidates);
+    navigate("/dicom");
+  };
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [message, setMessage] = useState<string>("");
@@ -396,6 +412,21 @@ const UploadPage: React.FC = () => {
             <div className="dropzone-text">Click or drag to upload</div>
             <div className="dropzone-sub">.nii or .nii.gz</div>
           </div>
+
+          {/* ── Local DICOM: view a folder of .dcm slices in-browser, nothing uploaded ── */}
+          <input
+            ref={dicomInputRef}
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            // Non-standard folder picker (Chrome/Edge/Safari); TS doesn't know it.
+            {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
+            onChange={handleDicomFolderSelect}
+          />
+          <button className="dicom-open-link" onClick={() => dicomInputRef.current?.click()}>
+            …or open a local DICOM folder in the viewer
+            <span>view only — the files never leave your browser</span>
+          </button>
 
           {/* ── File chips ── */}
           {selectedFiles.length > 0 && (

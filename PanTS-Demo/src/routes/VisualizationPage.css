@@ -364,6 +364,23 @@
   z-index: 55;
 }
 
+/* 3D pane placeholder for local DICOM (no segmentation → no meshes). */
+.vp-3d-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--vp-font);
+  font-size: 13px;
+  color: var(--vp-text-dim);
+}
+.vp-3d-empty span {
+  font-size: 11.5px;
+  color: var(--vp-text-faint);
+}
+
 /* Case / session identity block at the toolbar's left. */
 .vp-tb-id {
   display: flex;

@@ -4,6 +4,7 @@ import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumePro
 import { Niivue } from "@niivue/niivue";
 import {
     IconAngle,
+    IconBrush,
     IconCamera,
     IconChartBar,
     IconCheck,
@@ -19,7 +20,7 @@ import {
 } from "@tabler/icons-react";
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { SegmentationMeshViewer } from "../components/MeshViewer";
 import OrganCheckbox from "../components/OrganCheckbox";
@@ -38,6 +39,8 @@ import {
     captureViewportImages,
     centerOnCursor,
     clearMeasurements,
+    EDIT_BRUSH,
+    EDIT_ERASER,
     ELLIPSE_TOOL,
     getCrosshairMm,
     getMeasurementSummaries,
@@ -48,6 +51,7 @@ import {
     PROBE_TOOL,
     renderVisualization,
     ROI_TOOL,
+    setActiveMaskEditTool,
     setActiveMeasurementTool,
     setToolGroupOpacity,
     setVisibilities,
@@ -59,6 +63,7 @@ import {
     zoomToFit,
     type MeasurementToolName
 } from "../helpers/CornerstoneNifti2";
+import MaskEditPanel, { type MaskEditMode } from "../components/MaskEditPanel/MaskEditPanel";
 import MeasurementPanel from "../components/MeasurementPanel/MeasurementPanel";
 import SessionHUD from "../components/ReadingSession/SessionHUD";
 import SessionSummary from "../components/ReadingSession/SessionSummary";
@@ -68,6 +73,7 @@ import {
     type SessionResult,
 } from "../helpers/readingSession";
 import { toolDisplayName, type ReportMeasurement } from "../helpers/sessionReport";
+import { getLocalDicomFiles, loadLocalDicomSeries } from "../helpers/dicomLocal";
 import PercentileBar from "../components/PercentileBar";
 import {
 	describeBasis,
@@ -116,13 +122,18 @@ function VisualizationPage() {
 	const params = useParams();
 	const pantsCase = params.caseId;
 	const sessionId = params.sessionId;
+	// Local DICOM mode (/dicom): a folder of .dcm files picked on the Upload page,
+	// viewed entirely in-browser. No backend case, so no segmentation layer.
+	const routerLocation = useLocation();
+	const isDicom = routerLocation.pathname === "/dicom";
+	const [dicomError, setDicomError] = useState<string | null>(null);
 
 	// Where to load the volumes from. Per the maintainer's rule, dataset cases load
 	// from the lab's LOCAL endpoints (served off disk on the JHU server — much faster
 	// for big full-body scans than streaming the .nii.gz from HuggingFace). We probe
 	// the local file and only fall back to the public HuggingFace mirror when it isn't
 	// present (e.g. a dev checkout without the image data), so the viewer never breaks.
-	const caseId = pantsCase ?? sessionId ?? "1";
+	const caseId = isDicom ? "Local DICOM" : pantsCase ?? sessionId ?? "1";
 	const [ctUrl, setCtUrl] = useState<string | null>(null);
 	const [segUrl, setSegUrl] = useState<string | null>(null);
 	// Whether the local volumes exist (enables the HD toggle). Dataset cases default to
@@ -135,6 +146,7 @@ function VisualizationPage() {
 	useEffect(() => {
 		let cancelled = false;
 		const resolveSources = async () => {
+			if (isDicom) return; // local files, not URLs — the setup effect handles them
 			if (sessionId) {
 				setCtUrl(`${API_BASE}/api/session-ct/${sessionId}`);
 				setSegUrl(`${API_BASE}/api/session-segmentation/${sessionId}`);
@@ -158,7 +170,7 @@ function VisualizationPage() {
 		};
 		resolveSources();
 		return () => { cancelled = true; };
-	}, [pantsCase, sessionId, isHd]);
+	}, [pantsCase, sessionId, isHd, isDicom]);
 
 	// Flip between low-res and full-res by reloading the route — a fresh mount cleanly
 	// re-inits the Cornerstone/NiiVue contexts (re-running them in place is fragile).
@@ -228,6 +240,9 @@ function VisualizationPage() {
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
 	// Which measurement tool owns the primary mouse button (null = navigation/crosshair).
 	const [activeMeasureTool, setActiveMeasureTool] = useState<MeasurementToolName | null>(null);
+	// Mask editing: right-side panel + which brush (paint/erase) owns the mouse.
+	const [showEditPanel, setShowEditPanel] = useState(false);
+	const [editMode, setEditMode] = useState<MaskEditMode>(null);
 	// Collapsible measurement-tools flyout (declutters the toolbar). The menu renders in a
 	// portal at a fixed position so it isn't clipped by the scrollable settings panel.
 	const [measureMenuOpen, setMeasureMenuOpen] = useState(false);
@@ -271,12 +286,21 @@ function VisualizationPage() {
 	// const location = useLocation();
 	// Load and render visualization on first render
 
+	// Single owner for the primary mouse button, by priority:
+	// mask editing > measurement tool > navigation (crosshair/pan).
 	useEffect(() => {
-		// A measurement tool, when active, owns the primary button — don't let the
-		// crosshair/pan toggle fight it for control.
-		if (activeMeasureTool) return;
-		toggleCrosshairTool(crosshairToolActive);
-	}, [crosshairToolActive, activeMeasureTool]);
+		if (editMode) {
+			setActiveMeasurementTool(null);
+			setActiveMaskEditTool(editMode === "brush" ? EDIT_BRUSH : EDIT_ERASER);
+		} else if (activeMeasureTool) {
+			setActiveMaskEditTool(null);
+			setActiveMeasurementTool(activeMeasureTool);
+		} else {
+			setActiveMaskEditTool(null);
+			setActiveMeasurementTool(null);
+			toggleCrosshairTool(crosshairToolActive);
+		}
+	}, [editMode, activeMeasureTool, crosshairToolActive]);
 
 	// Close the measurement flyout on an outside click, or when the panel scrolls/resizes
 	// (the portal menu is fixed-positioned, so it would otherwise detach from the button).
@@ -297,19 +321,6 @@ function VisualizationPage() {
 			window.removeEventListener("resize", onReflow);
 		};
 	}, [measureMenuOpen]);
-
-	// Hand the primary mouse button to the chosen measure tool, or back to navigation.
-	useEffect(() => {
-		if (activeMeasureTool) {
-			setActiveMeasurementTool(activeMeasureTool);
-		} else {
-			setActiveMeasurementTool(null);
-			toggleCrosshairTool(crosshairToolActive);
-		}
-		// crosshairToolActive intentionally omitted: the effect above re-applies nav when
-		// the crosshair/pan toggle changes; here we only react to the measure-tool switch.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeMeasureTool]);
 
 	useEffect(() => {
 		const unsubscribe = subscribeToCrosshairChanges((mm) => {
@@ -431,14 +442,18 @@ function VisualizationPage() {
 			};
 			const key = e.key.toLowerCase();
 			if (toolByKey[key]) {
+				setEditMode(null); // measurement keys take the mouse back from the brush
 				setActiveMeasureTool((prev) => (prev === toolByKey[key] ? null : toolByKey[key]));
 			} else if (key === "c") {
+				setEditMode(null);
 				setActiveMeasureTool(null);
 				setCrosshairToolActive(true);
 			} else if (key === "s") {
 				void takeSnapshot();
 			} else if (key === "m") {
 				setShowStats(false);
+				setShowEditPanel(false);
+				setEditMode(null);
 				setShowMeasurePanel((v) => !v);
 			} else {
 				return;
@@ -520,6 +535,41 @@ function VisualizationPage() {
 			for (const key in labelColorMap) {
 				cmap[parseInt(key)] = labelColorMap[parseInt(key)];
 			}
+
+			// Local DICOM: build imageIds from the picked files instead of NIfTI URLs.
+			// No segmentation layer exists for these scans.
+			if (isDicom) {
+				if (!axial_ref.current || !sagittal_ref.current || !coronal_ref.current) return;
+				const files = getLocalDicomFiles();
+				if (!files.length) {
+					// Deep link or reload without files in memory — go pick a folder.
+					window.location.href = "/upload";
+					return;
+				}
+				try {
+					const { imageIds } = await loadLocalDicomSeries(files);
+					const result = await renderVisualization(
+						axial_ref.current,
+						sagittal_ref.current,
+						coronal_ref.current,
+						cmap,
+						"",
+						undefined,
+						setLoading,
+						{ ctImageIds: imageIds }
+					);
+					setLoading(false);
+					setRenderingEngine(result.renderingEngine);
+					setViewportIds(result.viewportIds);
+					setVolumeId(result.volumeId);
+				} catch (e) {
+					console.error(e);
+					setDicomError(e instanceof Error ? e.message : "Failed to load the DICOM series.");
+					setLoading(false);
+				}
+				return;
+			}
+
 			if (
 				!ctUrl ||
 				!segUrl ||
@@ -580,6 +630,11 @@ function VisualizationPage() {
 	}, [
 		ctUrl,
 		segUrl,
+		isDicom,
+		axial_ref,
+		sagittal_ref,
+		coronal_ref,
+		render_ref,
 		labelColorMap,
 	]);
 	// Toggle checkbox state
@@ -902,7 +957,10 @@ function VisualizationPage() {
 	};
 
 	const handleToggleStats = () => {
-		setShowMeasurePanel(false); // the two panels share the right-side slot
+		// The right-side slot is shared by stats / measurements / mask editing.
+		setShowMeasurePanel(false);
+		setShowEditPanel(false);
+		setEditMode(null);
 		setShowStats((v) => !v);
 		loadOrganStats();
 		loadPercentileContext();
@@ -1053,16 +1111,18 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 
 					{/* Compact adjustments: opacity, brightness, contrast, zoom */}
 					<div className="vp-tb-adjust">
-						<label className="vp-tb-slider" title="Mask opacity">
-							<span className="vp-tb-slider__label">Opac</span>
-							<input
-								type="range" min="0" max="100" step="1" className="vp-range"
-								aria-label="Label opacity"
-								value={opacityValue}
-								onChange={handleOpacityOnSliderChange}
-							/>
-							<span className="vp-tb-slider__val">{Math.round(opacityValue)}%</span>
-						</label>
+						{!isDicom && (
+							<label className="vp-tb-slider" title="Mask opacity">
+								<span className="vp-tb-slider__label">Opac</span>
+								<input
+									type="range" min="0" max="100" step="1" className="vp-range"
+									aria-label="Label opacity"
+									value={opacityValue}
+									onChange={handleOpacityOnSliderChange}
+								/>
+								<span className="vp-tb-slider__val">{Math.round(opacityValue)}%</span>
+							</label>
+						)}
 						<label className="vp-tb-slider" title="Brightness (window level)">
 							<span className="vp-tb-slider__label">Brt</span>
 							<input
@@ -1104,14 +1164,15 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 					{/* Tools */}
 									<div className="vp-toolrow vp-tb-tools">
 										<button
-												className={`vp-tool ${crosshairToolActive && !activeMeasureTool ? "vp-tool--active" : ""}`}
+												className={`vp-tool ${crosshairToolActive && !activeMeasureTool && !editMode ? "vp-tool--active" : ""}`}
 												onClick={() => {
+													setEditMode(null);
 													setActiveMeasureTool(null);
 													setCrosshairToolActive((prev) => !prev);
 												}}
 												aria-label="Crosshair mode"
 											>
-												<IconPointer size={20} color={crosshairToolActive && !activeMeasureTool ? "#08090b" : "white"} />
+												<IconPointer size={20} color={crosshairToolActive && !activeMeasureTool && !editMode ? "#08090b" : "white"} />
 												<span className="vp-tool__tip">Crosshair</span>
 											</button>
 											<div className="vp-toolgroup" ref={measureGroupRef}>
@@ -1141,6 +1202,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 																	className={`vp-flyout__item ${activeMeasureTool === name ? "is-active" : ""}`}
 																	role="menuitem"
 																	onClick={() => {
+																		setEditMode(null);
 																		setActiveMeasureTool((p) => (p === name ? null : name));
 																		setMeasureMenuOpen(false);
 																	}}
@@ -1165,10 +1227,30 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 														document.body
 													)}
 											</div>
+											{!isDicom && (
+												<button
+													className={`vp-tool ${showEditPanel || editMode ? "vp-tool--active" : ""}`}
+													onClick={() => {
+														setShowStats(false);
+														setShowMeasurePanel(false);
+														setShowEditPanel((v) => {
+															const next = !v;
+															if (!next) setEditMode(null);
+															return next;
+														});
+													}}
+													aria-label="Edit masks"
+												>
+													<IconBrush size={20} color={showEditPanel || editMode ? "#08090b" : "white"} />
+													<span className="vp-tool__tip">Edit masks</span>
+												</button>
+											)}
 											<button
 												className={`vp-tool ${showMeasurePanel ? "vp-tool--active" : ""}`}
 												onClick={() => {
 													setShowStats(false);
+													setShowEditPanel(false);
+													setEditMode(null);
 													setShowMeasurePanel((v) => !v);
 												}}
 												aria-label="Measurements list"
@@ -1202,18 +1284,20 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 															: "Record reading session"}
 												</span>
 											</button>
-											<button
-												className={`vp-tool ${shareCopied ? "vp-tool--active" : ""}`}
-												onClick={handleShare}
-												aria-label="Copy a shareable link to this view"
-											>
-												{shareCopied ? (
-													<IconCheck size={20} color="#08090b" />
-												) : (
-													<IconShare size={20} color="white" />
-												)}
-												<span className="vp-tool__tip">{shareCopied ? "Link copied!" : "Share this view"}</span>
-											</button>
+											{!isDicom && (
+												<button
+													className={`vp-tool ${shareCopied ? "vp-tool--active" : ""}`}
+													onClick={handleShare}
+													aria-label="Copy a shareable link to this view"
+												>
+													{shareCopied ? (
+														<IconCheck size={20} color="#08090b" />
+													) : (
+														<IconShare size={20} color="white" />
+													)}
+													<span className="vp-tool__tip">{shareCopied ? "Link copied!" : "Share this view"}</span>
+												</button>
+											)}
 											{/* <div className="group cursor-pointer rounded-md relative">
 													{!zoomMode ? (
 														<>
@@ -1231,38 +1315,42 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 													) : null }
 												</div> */}
 
-											<button
-												className="vp-tool"
-												onClick={handleDownloadClick}
-												aria-label="Download segmentations"
-											>
-												<IconDownload size={20} color="white" />
-												<span className="vp-tool__tip">Download</span>
-											</button>
-											<button
-												className="vp-tool"
-												onClick={() => setShowReportScreen(true)}
-												aria-label="Open report"
-											>
-												<IconReport size={20} color="white" />
-												<span className="vp-tool__tip">Report</span>
-											</button>
-											<button
-												className={`vp-tool ${showStats ? "vp-tool--active" : ""}`}
-												onClick={handleToggleStats}
-												aria-label="Organ statistics"
-											>
-												<IconChartBar size={20} color={showStats ? "#08090b" : "white"} />
-												<span className="vp-tool__tip">Organ stats</span>
-											</button>
-											<button
-												className={`vp-tool ${showAISidebar ? "vp-tool--active" : ""}`}
-												onClick={() => setShowAISidebar((visible) => !visible)}
-												aria-label="Open BodyMaps AI"
-											>
-												<span style={{ fontFamily: "var(--vp-mono)", fontSize: "12px", fontWeight: 700 }}>AI</span>
-												<span className="vp-tool__tip">BodyMaps AI</span>
-											</button>
+											{!isDicom && (
+												<>
+													<button
+														className="vp-tool"
+														onClick={handleDownloadClick}
+														aria-label="Download segmentations"
+													>
+														<IconDownload size={20} color="white" />
+														<span className="vp-tool__tip">Download</span>
+													</button>
+													<button
+														className="vp-tool"
+														onClick={() => setShowReportScreen(true)}
+														aria-label="Open report"
+													>
+														<IconReport size={20} color="white" />
+														<span className="vp-tool__tip">Report</span>
+													</button>
+													<button
+														className={`vp-tool ${showStats ? "vp-tool--active" : ""}`}
+														onClick={handleToggleStats}
+														aria-label="Organ statistics"
+													>
+														<IconChartBar size={20} color={showStats ? "#08090b" : "white"} />
+														<span className="vp-tool__tip">Organ stats</span>
+													</button>
+													<button
+														className={`vp-tool ${showAISidebar ? "vp-tool--active" : ""}`}
+														onClick={() => setShowAISidebar((visible) => !visible)}
+														aria-label="Open BodyMaps AI"
+													>
+														<span style={{ fontFamily: "var(--vp-mono)", fontSize: "12px", fontWeight: 700 }}>AI</span>
+														<span className="vp-tool__tip">BodyMaps AI</span>
+													</button>
+												</>
+											)}
 											{!sessionId && localAvailable && (
 												<button
 													className={`vp-tool ${isHd ? "vp-tool--active" : ""}`}
@@ -1274,18 +1362,20 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 												</button>
 											)}
 											{/* Organs panel opener (was the "Class Map" button) */}
-											<button
-												className={`vp-tool ${showOrganDetails ? "vp-tool--active" : ""}`}
-												onClick={() => {
-													setShowStats(false);
-													setShowMeasurePanel(false);
-													setShowOrganDetails(true);
-												}}
-												aria-label="Organs"
-											>
-												<IconStack2 size={20} color={showOrganDetails ? "#08090b" : "white"} />
-												<span className="vp-tool__tip">Organs</span>
-											</button>
+											{!isDicom && (
+												<button
+													className={`vp-tool ${showOrganDetails ? "vp-tool--active" : ""}`}
+													onClick={() => {
+														setShowStats(false);
+														setShowMeasurePanel(false);
+														setShowOrganDetails(true);
+													}}
+													aria-label="Organs"
+												>
+													<IconStack2 size={20} color={showOrganDetails ? "#08090b" : "white"} />
+													<span className="vp-tool__tip">Organs</span>
+												</button>
+											)}
 										</div>
 				</div>
 			)}
@@ -1404,7 +1494,16 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 
 					<div className={`render ${loading ? "" : "vp-pane vp-pane--render"}`} data-label="3D" style={panelStyle("3d")}>
 						<div className="canvas">
-							<SegmentationMeshViewer caseId={caseId} crosshairMm={crosshairMm} checkState={checkState} loading={loading} opacity={opacityValue} />
+							{isDicom ? (
+								// Meshes come from the case's segmentation on the server — a local
+								// DICOM scan has neither, so show a quiet placeholder instead.
+								<div className="vp-3d-empty">
+									3D rendering isn't available for local DICOM
+									<span>(requires a segmented dataset case)</span>
+								</div>
+							) : (
+								<SegmentationMeshViewer caseId={caseId} crosshairMm={crosshairMm} checkState={checkState} loading={loading} opacity={opacityValue} />
+							)}
 						</div>
 					</div>
 				</div>
@@ -1412,15 +1511,29 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 
 			{/* Fixed bottom bar for organ selection */}
 
-			<OrganCheckbox
-				setCheckState={setCheckState}
-				checkState={checkState}
-				sessionId={sessionId}
-				setShowOrganDetails={setShowOrganDetails}
-				showOrganDetails={showOrganDetails}
-				labelColorMap={labelColorMap}
-				onJumpToOrgan={handleJumpToOrgan}
-			/>
+			{!isDicom && (
+				<OrganCheckbox
+					setCheckState={setCheckState}
+					checkState={checkState}
+					sessionId={sessionId}
+					setShowOrganDetails={setShowOrganDetails}
+					showOrganDetails={showOrganDetails}
+					labelColorMap={labelColorMap}
+					onJumpToOrgan={handleJumpToOrgan}
+				/>
+			)}
+
+			{/* Local-DICOM load failure: explain and offer the way back. */}
+			{dicomError && (
+				<div className="vp-loading" role="alert">
+					<div className="flex flex-col items-center gap-4" style={{ maxWidth: 420, textAlign: "center" }}>
+						<div className="vp-loading__text">{dicomError}</div>
+						<button className="vp-btn" onClick={() => { window.location.href = "/upload"; }}>
+							Back to upload
+						</button>
+					</div>
+				</div>
+			)}
 
 			{showStats && (
 				<div className="vp-stats">
@@ -1523,6 +1636,20 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 				<MeasurementPanel
 					onClose={() => setShowMeasurePanel(false)}
 					onJump={(mm) => setCrosshairMm(mm)}
+				/>
+			)}
+
+			{showEditPanel && (
+				<MaskEditPanel
+					organs={checkBoxData}
+					caseId={String(caseId)}
+					mode={editMode}
+					onModeChange={setEditMode}
+					onClose={() => {
+						setShowEditPanel(false);
+						setEditMode(null);
+					}}
+					onEdit={(detail) => sessionRef.current?.log("edit", detail, 2000)}
 				/>
 			)}
 

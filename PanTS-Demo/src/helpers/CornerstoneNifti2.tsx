@@ -1,4 +1,4 @@
-import { cache, init as coreInit, Enums, eventTarget, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
+import { cache, init as coreInit, Enums, eventTarget, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, utilities as csCoreUtils, volumeLoader } from "@cornerstonejs/core";
 import type { ColorLUT } from "@cornerstonejs/core/types";
 import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init as niftiImageLoaderInit } from "@cornerstonejs/nifti-volume-loader";
 import * as cornerstoneTools from '@cornerstonejs/tools';
@@ -21,6 +21,7 @@ const {
     RectangleROITool,
     AngleTool,
     EllipticalROITool,
+    BrushTool,
 } = cornerstoneTools;
 
 // Measurement tools the toolbar can switch the primary mouse button to. Length =
@@ -33,6 +34,14 @@ export const ANGLE_TOOL = AngleTool.toolName;
 export const ELLIPSE_TOOL = EllipticalROITool.toolName;
 export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL] as const;
 export type MeasurementToolName = (typeof MEASUREMENT_TOOL_NAMES)[number];
+
+// Mask-editing tools: two instances of BrushTool, one painting the active segment,
+// one erasing (strategy ERASE writes segment 0). Registered passive; the toolbar's
+// Edit panel activates one of them on the primary button.
+export const EDIT_BRUSH = "MaskBrush";
+export const EDIT_ERASER = "MaskEraser";
+export const EDIT_TOOL_NAMES = [EDIT_BRUSH, EDIT_ERASER] as const;
+export type MaskEditToolName = (typeof EDIT_TOOL_NAMES)[number];
 
 // Cornerstone's defaults draw measurements in yellow (resting) / green (selected) — the
 // standard radiology-viewer convention for a plain grayscale background. BodyMaps overlays
@@ -195,7 +204,7 @@ export function subscribeToVolumeProgress(
 // tool registration. Mirrors the guard in compareViewer.ts.
 let _cornerstoneInited = false;
 
-export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, ctUrl: string, segUrl: string | undefined, setLoading: React.Dispatch<React.SetStateAction<boolean>>) {
+export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivElement, ref3: HTMLDivElement, convertedColorLUT: ColorLUT, ctUrl: string, segUrl: string | undefined, setLoading: React.Dispatch<React.SetStateAction<boolean>>, opts?: { ctImageIds?: string[] }) {
     if (!_cornerstoneInited) {
         coreInit();
         niftiImageLoaderInit();
@@ -222,6 +231,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(RectangleROITool);
     cornerstoneTools.addTool(AngleTool);
     cornerstoneTools.addTool(EllipticalROITool);
+    cornerstoneTools.addTool(BrushTool);
     toolGroup.addTool(PanTool.toolName);
     toolGroup.addTool(ZoomTool.toolName);
     toolGroup.addTool(StackScrollTool.toolName);
@@ -230,6 +240,13 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     toolGroup.addTool(RectangleROITool.toolName);
     toolGroup.addTool(AngleTool.toolName);
     toolGroup.addTool(EllipticalROITool.toolName);
+    // Mask editing: paint fills the active segment, the eraser writes segment 0.
+    toolGroup.addToolInstance(EDIT_BRUSH, BrushTool.toolName, {
+        activeStrategy: "FILL_INSIDE_CIRCLE",
+    });
+    toolGroup.addToolInstance(EDIT_ERASER, BrushTool.toolName, {
+        activeStrategy: "ERASE_INSIDE_CIRCLE",
+    });
     // Merge our color overrides onto the existing defaults — replacing wholesale would
     // drop font/background/shadow defaults and the value labels would stop rendering.
     const defaultStyles = annotation.config.style.getDefaultToolStyles();
@@ -264,10 +281,16 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     currentRenderingEngine = renderingEngine;
     
     imageLoader.registerImageLoader("nifti", cornerstoneNiftiImageLoader);
-    const imageIds = await createNiftiImageIdsAndCacheMetadata({ url: mainNiftiURL });
+    // The CT stack either streams from a NIfTI URL (dataset cases / sessions) or is a
+    // set of already-registered DICOM imageIds (local "open DICOM folder" flow).
+    const imageIds = opts?.ctImageIds ?? (await createNiftiImageIdsAndCacheMetadata({ url: mainNiftiURL }));
     const segmentationImageIds = segmentationURL
     ? await createNiftiImageIdsAndCacheMetadata({ url: segmentationURL })
     : [];
+    // Dataset navigations are full page reloads, so the fixed volumeId never collides.
+    // Local DICOM opens happen within one SPA session (upload → view → back → open
+    // another folder), so each load needs a fresh id or the cache serves the old scan.
+    const ctVolumeId = opts?.ctImageIds ? `dicomVolume-${Date.now()}` : volumeId;
     
     const viewportInputArray = [
         {
@@ -309,14 +332,18 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     for (const toolName of MEASUREMENT_TOOL_NAMES) {
         toolGroup.setToolPassive(toolName);
     }
+    // Brush/eraser start disabled — they only own the mouse while Edit mode is on.
+    for (const toolName of EDIT_TOOL_NAMES) {
+        toolGroup.setToolDisabled(toolName);
+    }
 
     renderingEngine.setViewports(viewportInputArray);
 
-    const volume = await volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+    const volume = await volumeLoader.createAndCacheVolume(ctVolumeId, { imageIds });
     await volume.load();
     await setVolumesForViewports(
         renderingEngine,
-        [{ volumeId }],
+        [{ volumeId: ctVolumeId }],
         viewportInputArray.map((viewport) => viewport.viewportId)
     );
 
@@ -363,7 +390,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     return {
         viewportIds: viewportInputArray.map((viewport) => viewport.viewportId),
         renderingEngine: renderingEngine,
-        volumeId: volumeId
+        volumeId: ctVolumeId
     }
 }
 
@@ -376,6 +403,9 @@ export function setVisibilities(checkState: boolean[]) {
         segmentation.config.visibility.setSegmentIndexVisibility(viewportId2, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i, checkState[i]);
         segmentation.config.visibility.setSegmentIndexVisibility(viewportId3, { segmentationId: segmentationId, type: csToolsEnums.SegmentationRepresentations.Labelmap }, i, checkState[i]);
     }
+    // The loop above walks setActiveSegmentIndex through every id — restore the one the
+    // brush is targeting, or edits would silently land on the last organ in the list.
+    segmentation.segmentIndex.setActiveSegmentIndex(segmentationId, _activeEditSegment);
     if (currentRenderingEngine) {
         currentRenderingEngine.renderViewports([viewportId1, viewportId2, viewportId3]);
         currentRenderingEngine.render();
@@ -434,9 +464,116 @@ export function setActiveMeasurementTool(toolName: MeasurementToolName | null) {
   if (!toolName) return;
   toolGroup.setToolDisabled(CrosshairsTool.toolName);
   toolGroup.setToolDisabled(PanTool.toolName);
+  for (const name of EDIT_TOOL_NAMES) toolGroup.setToolDisabled(name);
   toolGroup.setToolActive(toolName, {
     bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
   });
+}
+
+// ---------------------------------------------------------------------------
+// Mask editing — brush/eraser over the segmentation labelmap, undo/redo via
+// Cornerstone's history, and export of the edited labelmap for download.
+// ---------------------------------------------------------------------------
+
+// The segment the brush paints. Module-level so setVisibilities can restore it
+// (its loop clobbers the active segment index).
+let _activeEditSegment = 1;
+
+export function hasSegmentation(): boolean {
+  return !!cache.getVolume(segmentationId);
+}
+
+// Hand the primary button to the brush or eraser, or pass null to release it
+// (the caller then restores measurement/navigation ownership).
+export function setActiveMaskEditTool(toolName: MaskEditToolName | null) {
+  const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+  if (!toolGroup) return;
+  for (const name of EDIT_TOOL_NAMES) toolGroup.setToolDisabled(name);
+  if (!toolName) return;
+  toolGroup.setToolDisabled(CrosshairsTool.toolName);
+  toolGroup.setToolDisabled(PanTool.toolName);
+  for (const name of MEASUREMENT_TOOL_NAMES) toolGroup.setToolPassive(name);
+  toolGroup.setToolActive(toolName, {
+    bindings: [{ mouseButton: csToolsEnums.MouseBindings.Primary }],
+  });
+}
+
+export function setActiveEditSegment(segmentIndex: number) {
+  _activeEditSegment = segmentIndex;
+  try {
+    segmentation.segmentIndex.setActiveSegmentIndex(segmentationId, segmentIndex);
+  } catch {
+    /* segmentation not loaded yet */
+  }
+}
+
+// Brush radius in world mm (applies to both the brush and eraser instances).
+export function setMaskBrushSize(mm: number) {
+  try {
+    cornerstoneTools.utilities.segmentation.setBrushSizeForToolGroup(toolGroupId, mm);
+  } catch {
+    /* tool group not ready */
+  }
+}
+
+// Cornerstone records every labelmap stroke as a memo on its shared history.
+export function undoMaskEdit() {
+  csCoreUtils.HistoryMemo.DefaultHistoryMemo.undo();
+  currentRenderingEngine?.render();
+}
+
+export function redoMaskEdit() {
+  csCoreUtils.HistoryMemo.DefaultHistoryMemo.redo();
+  currentRenderingEngine?.render();
+}
+
+export function getMaskEditHistoryState(): { canUndo: boolean; canRedo: boolean } {
+  const h = csCoreUtils.HistoryMemo.DefaultHistoryMemo;
+  return { canUndo: h.canUndo, canRedo: h.canRedo };
+}
+
+// Fires whenever any stroke (or undo/redo of one) changes the labelmap.
+export function subscribeToSegmentationEdits(cb: () => void): () => void {
+  const handler = () => cb();
+  eventTarget.addEventListener(
+    csToolsEnums.Events.SEGMENTATION_DATA_MODIFIED,
+    handler as EventListener
+  );
+  return () =>
+    eventTarget.removeEventListener(
+      csToolsEnums.Events.SEGMENTATION_DATA_MODIFIED,
+      handler as EventListener
+    );
+}
+
+export type LabelmapExport = {
+  dimensions: number[];
+  spacing: number[];
+  origin: number[];
+  /** Nine values, LPS world axes: i-axis [0..2], j-axis [3..5], k-axis [6..8]. */
+  direction: number[];
+  data: ArrayLike<number>;
+};
+
+// Current (possibly edited) labelmap + geometry, for the NIfTI download.
+export function getSegmentationExport(): LabelmapExport | null {
+  const volume = cache.getVolume(segmentationId);
+  const vm = volume?.voxelManager;
+  if (!volume || !vm) return null;
+  let data: ArrayLike<number> | undefined;
+  try {
+    data = vm.getCompleteScalarDataArray?.();
+  } catch {
+    return null;
+  }
+  if (!data || !data.length) return null;
+  return {
+    dimensions: [...volume.dimensions],
+    spacing: [...volume.spacing],
+    origin: [...volume.origin],
+    direction: [...volume.direction],
+    data,
+  };
 }
 
 // Remove only measurement annotations (Length/Probe/ROI), leaving the crosshair intact.

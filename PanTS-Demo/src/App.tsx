@@ -61,6 +61,8 @@ function App() {
 								{/* <Route path="/:type/:page" element={<Homepage />} /> */}
 								<Route path="/case/:caseId" element={<VisualizationPage />} />
 								<Route path="/session/:sessionId" element={<VisualizationPage />} />
+								{/* Local DICOM series picked on the Upload page (files held in memory). */}
+								<Route path="/dicom" element={<VisualizationPage />} />
 								<Route path="/reconstruction/:reconstructionId" element={<VisualizationPage />} />
 								<Route path="/test" element={<RotatingHeartLoader />} />
 								<Route path="/upload" element={<UploadPage />} />

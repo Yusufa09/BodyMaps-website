@@ -17,6 +17,11 @@ export default defineConfig({
 	build: {
 		target: "esnext",
 	},
+	// The DICOM image loader's decode workers use dynamic imports; the default
+	// "iife" worker format can't code-split, so build workers as ES modules.
+	worker: {
+		format: "es",
+	},
 	assetsInclude: ['**/*.wasm'],
 	server: {
 		// https: {
