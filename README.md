@@ -67,7 +67,7 @@ git pull
 
 #### 2. Rebuild the frontend
 ```
-cd /home/visitor/PanTS-Viewer/PanTS-Demo && npm run build
+cd /home/visitor/PanTS-Viewer/PanTS-Demo && npm ci && npm run build
 ```
 
 #### 3. Restart the backend
