@@ -634,7 +634,6 @@ function VisualizationPage() {
 		axial_ref,
 		sagittal_ref,
 		coronal_ref,
-		render_ref,
 		labelColorMap,
 	]);
 	// Toggle checkbox state
