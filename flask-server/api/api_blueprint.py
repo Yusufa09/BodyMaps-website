@@ -1467,13 +1467,14 @@ _EDITED_MASK_MAX_BYTES = 512 * 1024 * 1024  # generous cap for a full-body label
 
 
 def _edited_masks_dir(case_id):
-    # Traversal safety: get_panTS_id only zero-pads and prefixes — the user's
-    # case_id DOES end up in the path. What actually blocks traversal is the
-    # route's <case_id> converter (no "/" can match) plus the "PanTS_" prefix
-    # (so ".." can't resolve upward). Belt and braces: require digits outright.
+    # Traversal safety: require digits, then convert to int before it reaches the
+    # filesystem. A number can't carry a "../" or "/" payload, so the only value
+    # that flows into os.path.join is fully controlled (get_panTS_id just zero-pads
+    # and prefixes "PanTS_"). The int() cast is also what lets static analysis
+    # (CodeQL py/path-injection) see the user-tainted string is neutralized.
     if not str(case_id).isdigit():
         raise ValueError("case_id must be numeric")
-    return os.path.join(Constants.PANTS_PATH, _EDITED_MASKS_DIRNAME, get_panTS_id(case_id))
+    return os.path.join(Constants.PANTS_PATH, _EDITED_MASKS_DIRNAME, get_panTS_id(int(case_id)))
 
 
 @api_blueprint.route('/save-edited-mask/<case_id>', methods=['POST'])
