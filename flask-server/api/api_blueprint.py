@@ -1,7 +1,7 @@
 from flask import Blueprint, send_file, make_response, request, jsonify, Response
 from services.nifti_processor import NiftiProcessor
 from services.session_manager import SessionManager, generate_uuid
-from services.auto_segmentor import run_auto_segmentation
+from services.auto_segmentor import run_auto_segmentation, cancel_all_inference
 from services.mesh_generation import generate_mesh_manifest, generate_organ_glb_bytes
 from services.inference_job_queue import InferenceJobQueue
 from models.application_session import ApplicationSession
@@ -1158,6 +1158,15 @@ def finalize_dicom():
 
 
 ## OTHER ENDPOINTS ##
+
+@api_blueprint.route('/cancel-inference', methods=['POST'])
+def cancel_inference():
+    cancel_all_inference()
+    for session_id, job in inference_jobs.items():
+        if job.get('status') == 'running':
+            _set_inference_job(session_id, status='failed', error='Cancelled by user')
+    return jsonify({"message": "Inference cancelled"}), 200
+
 
 @api_blueprint.route('/ping', methods=['GET'])
 def ping():

@@ -110,8 +110,10 @@ const PipelineSelect: React.FC<{
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dicomInputRef = useRef<HTMLInputElement | null>(null);
   const jobQueueRef = useRef<UploadJob[]>([]);
   const isProcessingRef = useRef(false);
+  const cancelledRef = useRef(false);
 
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
@@ -161,10 +163,41 @@ const UploadPage: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (e.dataTransfer.files) addFiles(Array.from(e.dataTransfer.files));
+
+    const readEntry = (entry: FileSystemEntry): Promise<File[]> => {
+      if (entry.isFile) {
+        return new Promise(res => (entry as FileSystemFileEntry).file(f => res([f]), () => res([])));
+      }
+      if (entry.isDirectory) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        return new Promise(res => {
+          const all: FileSystemEntry[] = [];
+          const readBatch = () =>
+            reader.readEntries(batch => {
+              if (!batch.length) {
+                Promise.all(all.map(readEntry)).then(groups => res(groups.flat())).catch(() => res([]));
+              } else {
+                all.push(...batch);
+                readBatch();
+              }
+            }, () => res([]));
+          readBatch();
+        });
+      }
+      return Promise.resolve([]);
+    };
+
+    const items = Array.from(e.dataTransfer.items);
+    const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean) as FileSystemEntry[];
+    if (entries.length > 0) {
+      const files = (await Promise.all(entries.map(readEntry))).flat();
+      addFiles(files);
+    } else if (e.dataTransfer.files.length > 0) {
+      addFiles(Array.from(e.dataTransfer.files));
+    }
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -307,7 +340,9 @@ const UploadPage: React.FC = () => {
   const drainQueue = async () => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
+    cancelledRef.current = false;
     while (jobQueueRef.current.length > 0) {
+      if (cancelledRef.current) break;
       const next = jobQueueRef.current.shift()!;
       if (next.isDicom) {
         await processDicomJob(next);
@@ -341,6 +376,18 @@ const UploadPage: React.FC = () => {
     setPendingItems([]);
     setPreviewItemId(null);
     drainQueue();
+  };
+
+  /* ── Cancel all inference ── */
+  const handleStopAll = async () => {
+    cancelledRef.current = true;
+    jobQueueRef.current = [];
+    setJobs(prev => prev.map(j =>
+      j.status === 'uploading' || j.status === 'processing' || j.status === 'queued'
+        ? { ...j, status: 'failed' as JobStatus, error: 'Cancelled by user' }
+        : j
+    ));
+    await fetch(`${API_BASE}/api/cancel-inference`, { method: 'POST' });
   };
 
   /* ── Download ── */
@@ -393,7 +440,6 @@ const UploadPage: React.FC = () => {
           {/* Drop zone */}
           <div
             className={`dropzone${isDragOver ? ' drag-over' : ''}`}
-            onClick={() => fileInputRef.current?.click()}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -406,13 +452,38 @@ const UploadPage: React.FC = () => {
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
+            <input
+              ref={dicomInputRef}
+              type="file"
+              multiple
+              // @ts-ignore – webkitdirectory is not in React's typedefs
+              webkitdirectory=""
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
             <svg className="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            <div className="dropzone-text">Click or drag to upload</div>
-            <div className="dropzone-sub">.nii · .nii.gz · .dcm · hold ⌘/Ctrl to select multiple</div>
+            <div className="dropzone-text">Drag a file or folder here, or</div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <button
+                type="button"
+                className="dropzone-btn"
+                onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+              >
+                Select NIfTI file
+              </button>
+              <button
+                type="button"
+                className="dropzone-btn"
+                onClick={e => { e.stopPropagation(); dicomInputRef.current?.click(); }}
+              >
+                Select DICOM folder
+              </button>
+            </div>
+            <div className="dropzone-sub" style={{ marginTop: '10px' }}>.nii · .nii.gz · or a folder of .dcm slices</div>
           </div>
 
           {/* Pending file chips */}
@@ -523,6 +594,11 @@ const UploadPage: React.FC = () => {
         {/* Queue status */}
         {jobs.length > 0 && (
           <div style={{ marginTop: '24px' }}>
+            {activeCount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                <button className="stop-btn" onClick={handleStopAll}>Stop all</button>
+              </div>
+            )}
 
             {/* Active job progress */}
             {activeJobs.map(job => (
@@ -604,7 +680,7 @@ const UploadPage: React.FC = () => {
                       >
                         <div className="upload-completed-icon">
                           {isFailed ? (
-                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8f8f8f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <circle cx="12" cy="12" r="10" />
                               <line x1="15" y1="9" x2="9" y2="15" />
                               <line x1="9" y1="9" x2="15" y2="15" />
@@ -620,12 +696,12 @@ const UploadPage: React.FC = () => {
                         </div>
 
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, color: isFailed ? '#ef4444' : '#111111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, color: '#111111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {job.displayName}
                           </div>
-                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: isFailed ? '#f87171' : '#6a6a6a', marginTop: 2 }}>
+                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#6a6a6a', marginTop: 2 }}>
                             {isFailed
-                              ? (job.error || 'Unknown error')
+                              ? `Failed · ${job.error || 'Unknown error'}`
                               : `${job.model} · click to view`}
                           </div>
                         </div>

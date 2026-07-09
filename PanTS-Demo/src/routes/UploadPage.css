@@ -115,6 +115,24 @@
   letter-spacing: 0.04em;
 }
 
+/* ── Dropzone buttons ── */
+.dropzone-btn {
+  padding: 7px 16px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #111111;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dropzone-btn:hover {
+  background: rgba(0,0,0,.10);
+  border-color: rgba(0,0,0,.2);
+}
+
 /* ── File chips ── */
 .file-chips {
   display: flex;
@@ -440,6 +458,26 @@
 .run-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ── Stop button ── */
+.stop-btn {
+  padding: 7px 18px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 8px;
+  color: #6a6a6a;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+}
+.stop-btn:hover {
+  background: rgba(0,0,0,.07);
+  border-color: rgba(0,0,0,.2);
+  color: #111;
 }
 
 /* ── Advanced options ── */
@@ -816,12 +854,12 @@
 /* ── Failed row variant ── */
 .upload-completed-row--failed {
   cursor: default;
-  border-color: rgba(239,68,68,.2);
-  background: rgba(239,68,68,.04);
+  border-color: rgba(0,0,0,.08);
+  background: rgba(0,0,0,.03);
 }
 .upload-completed-row--failed:hover {
-  background: rgba(239,68,68,.06);
-  border-color: rgba(239,68,68,.3);
+  background: rgba(0,0,0,.05);
+  border-color: rgba(0,0,0,.12);
 }
 
 /* ── Completed row icon wrapper ── */
@@ -837,8 +875,8 @@
   flex-shrink: 0;
 }
 .upload-completed-row--failed .upload-completed-icon {
-  background: rgba(239,68,68,.08);
-  border-color: rgba(239,68,68,.2);
+  background: rgba(0,0,0,.04);
+  border-color: rgba(0,0,0,.08);
 }
 
 /* ── Pre-inference CT preview ── */
