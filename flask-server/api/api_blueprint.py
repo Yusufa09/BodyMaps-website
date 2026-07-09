@@ -1467,7 +1467,12 @@ _EDITED_MASK_MAX_BYTES = 512 * 1024 * 1024  # generous cap for a full-body label
 
 
 def _edited_masks_dir(case_id):
-    # get_panTS_id normalizes to "PanTS_00000123" — no user-controlled path parts.
+    # Traversal safety: get_panTS_id only zero-pads and prefixes — the user's
+    # case_id DOES end up in the path. What actually blocks traversal is the
+    # route's <case_id> converter (no "/" can match) plus the "PanTS_" prefix
+    # (so ".." can't resolve upward). Belt and braces: require digits outright.
+    if not str(case_id).isdigit():
+        raise ValueError("case_id must be numeric")
     return os.path.join(Constants.PANTS_PATH, _EDITED_MASKS_DIRNAME, get_panTS_id(case_id))
 
 
