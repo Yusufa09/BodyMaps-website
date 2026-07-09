@@ -1452,3 +1452,73 @@ def ai_command():
             "source": "error",
         }), 500
 
+
+
+# ---------------------------------------------------------------------------
+# Edited segmentation masks (viewer's Edit Masks panel).
+# Strictly additive and isolated: writes ONLY into {PANTS_PATH}/edited_masks/,
+# never touching image_only/ or mask_only/, so the original dataset is safe.
+# Each save is timestamped rather than overwritten — a lightweight version
+# history a maintainer can inspect or promote manually.
+# ---------------------------------------------------------------------------
+
+_EDITED_MASKS_DIRNAME = "edited_masks"
+_EDITED_MASK_MAX_BYTES = 512 * 1024 * 1024  # generous cap for a full-body labelmap
+
+
+def _edited_masks_dir(case_id):
+    # Traversal safety: require digits, then convert to int before it reaches the
+    # filesystem. A number can't carry a "../" or "/" payload, so the only value
+    # that flows into os.path.join is fully controlled (get_panTS_id just zero-pads
+    # and prefixes "PanTS_"). The int() cast is also what lets static analysis
+    # (CodeQL py/path-injection) see the user-tainted string is neutralized.
+    if not str(case_id).isdigit():
+        raise ValueError("case_id must be numeric")
+    return os.path.join(Constants.PANTS_PATH, _EDITED_MASKS_DIRNAME, get_panTS_id(int(case_id)))
+
+
+@api_blueprint.route('/save-edited-mask/<case_id>', methods=['POST'])
+def save_edited_mask(case_id):
+    try:
+        uploaded = request.files.get("mask")
+        if uploaded is None:
+            return jsonify({"error": "No file field 'mask' in the request."}), 400
+        data = uploaded.read(_EDITED_MASK_MAX_BYTES + 1)
+        if len(data) > _EDITED_MASK_MAX_BYTES:
+            return jsonify({"error": "Mask file too large."}), 413
+        # The viewer always sends gzipped NIfTI; check the gzip magic bytes.
+        if len(data) < 2 or data[0] != 0x1F or data[1] != 0x8B:
+            return jsonify({"error": "Expected a gzipped NIfTI (.nii.gz) file."}), 400
+
+        out_dir = _edited_masks_dir(case_id)
+        os.makedirs(out_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"combined_labels_edited_{timestamp}.nii.gz"
+        with open(os.path.join(out_dir, filename), "wb") as f:
+            f.write(data)
+        return jsonify({"saved": True, "filename": filename, "bytes": len(data)})
+    except Exception as error:
+        print("[save_edited_mask error]", type(error).__name__, error)
+        return jsonify({"error": "Failed to save the edited mask."}), 500
+
+
+@api_blueprint.route('/list-edited-masks/<case_id>', methods=['GET'])
+def list_edited_masks(case_id):
+    try:
+        out_dir = _edited_masks_dir(case_id)
+        if not os.path.isdir(out_dir):
+            return jsonify({"items": []})
+        items = []
+        for name in sorted(os.listdir(out_dir), reverse=True):
+            path = os.path.join(out_dir, name)
+            if not os.path.isfile(path):
+                continue
+            items.append({
+                "filename": name,
+                "bytes": os.path.getsize(path),
+                "modified": datetime.fromtimestamp(os.path.getmtime(path)).isoformat(),
+            })
+        return jsonify({"items": items})
+    except Exception as error:
+        print("[list_edited_masks error]", type(error).__name__, error)
+        return jsonify({"error": "Failed to list edited masks."}), 500
