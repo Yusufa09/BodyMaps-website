@@ -9,7 +9,7 @@ import {
   setZoom as csSetZoom,
   zoomToFit as csZoomToFit,
 } from "../../helpers/CornerstoneNifti2";
-import type { MeasurementToolName } from "../../helpers/CornerstoneNifti2";
+import type { MeasurementToolName, PrimaryMouseToolName } from "../../helpers/CornerstoneNifti2";
 import { segmentation_categories } from "../../helpers/constants";
 import type { CheckBoxData } from "../../types";
 import type { ViewerActions } from "./types";
@@ -56,7 +56,7 @@ export function buildViewerActions(opts: {
   setOpacityValue: React.Dispatch<React.SetStateAction<number>>;
   handleWindowChange: (width: number | null, center: number | null) => void;
   setViewModeFn: (view: "mpr" | "axial" | "sagittal" | "coronal" | "3d") => void;
-  setActiveMeasureToolFn: React.Dispatch<React.SetStateAction<MeasurementToolName | null>>;
+  setActiveMeasureToolFn: React.Dispatch<React.SetStateAction<PrimaryMouseToolName | null>>;
   caseId: string;
   apiBase: string;
 }): ViewerActions {

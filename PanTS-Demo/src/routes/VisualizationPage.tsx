@@ -4,19 +4,24 @@ import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumePro
 import { Niivue } from "@niivue/niivue";
 import {
     IconAngle,
+    IconArrowBackUp,
+    IconArrowForwardUp,
+    IconArrowsCross,
+    IconArrowUpRight,
     IconBrush,
     IconCamera,
     IconChartBar,
     IconCheck,
     IconCircle,
     IconClick,
-    IconDownload, IconHome, IconListDetails, IconMicrophone, IconPointer, IconReport,
+    IconDownload, IconHome, IconListDetails, IconMicrophone, IconPlayerPause, IconPlayerPlay, IconPointer, IconReport,
     IconRuler2,
     IconSettings,
     IconShare,
     IconSquareDashed,
     IconStack2,
-    IconTrash
+    IconTrash,
+    IconZoomIn
 } from "@tabler/icons-react";
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -37,6 +42,8 @@ import {
 import {
     ANGLE_TOOL,
     applyVolume3DPreset,
+    ARROW_TOOL,
+    BIDIRECTIONAL_TOOL,
     captureViewportImages,
     centerOnCursor,
     clearMeasurements,
@@ -50,23 +57,33 @@ import {
     getOrganCentroids,
     getOrganLabelOnClick,
     LENGTH_TOOL,
+    MAGNIFY_TOOL,
     moveCornerstoneCrosshairToMm,
     PROBE_TOOL,
+    redoMaskEdit,
     renderVisualization,
+    resetMprOrientation,
     ROI_TOOL,
     setActiveMaskEditTool,
     setActiveMeasurementTool,
     setToolGroupOpacity,
     setVisibilities,
     setZoom,
+    startCine,
+    stopCine,
     subscribeToCrosshairChanges,
     subscribeToMeasurementChanges,
+    getCurrentVolumeModality,
     subscribeToVolumeProgress,
     toggleCrosshairTool,
+    undoMaskEdit,
     upgradeCtVolume,
     VOLUME_3D_PRESETS,
+    VOLUME_3D_PRESETS_MR,
     zoomToFit,
-    type MeasurementToolName
+    type CinePane,
+    type MeasurementToolName,
+    type PrimaryMouseToolName
 } from "../helpers/CornerstoneNifti2";
 import MaskEditPanel, { type MaskEditMode } from "../components/MaskEditPanel/MaskEditPanel";
 import MeasurementPanel from "../components/MeasurementPanel/MeasurementPanel";
@@ -109,6 +126,8 @@ const CT_PRESETS = [
 	{ name: "Bone", width: 1800, center: 400 },
 	{ name: "Lung", width: 1500, center: -600 },
 	{ name: "Liver", width: 150, center: -50 }, // Brightness 50 (= -center), Contrast 150 (= width)
+	{ name: "Brain", width: 80, center: 40 },
+	{ name: "Angio", width: 600, center: 150 }, // contrast-enhanced vessels (CTA)
 ] as const;
 
 // Measurement tools shown inside the collapsible "Measure" flyout, so the toolbar isn't
@@ -116,10 +135,12 @@ const CT_PRESETS = [
 // `key` is the keyboard shortcut (also shown in the flyout).
 const MEASURE_TOOLS: { name: MeasurementToolName; label: string; Icon: typeof IconRuler2; key: string }[] = [
 	{ name: LENGTH_TOOL, label: "Distance (mm)", Icon: IconRuler2, key: "L" },
+	{ name: BIDIRECTIONAL_TOOL, label: "Bidirectional · long × short axis", Icon: IconArrowsCross, key: "B" },
 	{ name: ANGLE_TOOL, label: "Angle (°)", Icon: IconAngle, key: "A" },
 	{ name: PROBE_TOOL, label: "HU at point", Icon: IconClick, key: "P" },
 	{ name: ROI_TOOL, label: "Rect ROI · HU & area", Icon: IconSquareDashed, key: "R" },
 	{ name: ELLIPSE_TOOL, label: "Ellipse ROI · HU & area", Icon: IconCircle, key: "E" },
+	{ name: ARROW_TOOL, label: "Arrow · label a finding", Icon: IconArrowUpRight, key: "T" },
 ];
 
 function VisualizationPage() {
@@ -243,8 +264,11 @@ function VisualizationPage() {
 	);
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
-	// Which measurement tool owns the primary mouse button (null = navigation/crosshair).
-	const [activeMeasureTool, setActiveMeasureTool] = useState<MeasurementToolName | null>(null);
+	// Which measurement tool (or the magnify loupe) owns the primary mouse button
+	// (null = navigation/crosshair).
+	const [activeMeasureTool, setActiveMeasureTool] = useState<PrimaryMouseToolName | null>(null);
+	// Cine playback: auto-scroll the current pane through its slices.
+	const [cinePlaying, setCinePlaying] = useState(false);
 	// Mask editing: right-side panel + which brush (paint/erase) owns the mouse.
 	const [showEditPanel, setShowEditPanel] = useState(false);
 	const [editMode, setEditMode] = useState<MaskEditMode>(null);
@@ -264,6 +288,8 @@ function VisualizationPage() {
 	// rendering of the CT itself (the only 3D option for local DICOM).
 	const [threeDMode, setThreeDMode] = useState<"mesh" | "volume">(isDicom ? "volume" : "mesh");
 	const [volumePreset, setVolumePreset] = useState<string>(VOLUME_3D_PRESETS[0].name);
+	// CT presets by default; swapped for the MR set when a local DICOM turns out to be MR.
+	const [volume3DPresets, setVolume3DPresets] = useState<readonly { name: string; label: string }[]>(VOLUME_3D_PRESETS);
 	const [volume3DFailed, setVolume3DFailed] = useState(false);
 	const volume3DRef = useRef<HTMLDivElement>(null);
 	// Collapsible measurement-tools flyout (declutters the toolbar). The menu renders in a
@@ -445,25 +471,62 @@ function VisualizationPage() {
 		return unsubscribe;
 	}, [takeSnapshot]);
 
-	// Keyboard shortcuts (skipped while typing): L/A/P/R/E measurement tools,
-	// C crosshair, S snapshot, M measurements panel.
+	// ---- Cine playback ------------------------------------------------------------
+
+	// The pane cine scrolls: the fullscreen 2D pane when in a single view, else axial.
+	const cinePane: CinePane =
+		viewMode === "sagittal" || viewMode === "coronal" ? viewMode : "axial";
+
+	const toggleCine = useCallback(() => {
+		setCinePlaying((playing) => {
+			if (playing) {
+				stopCine();
+				sessionRef.current?.log("view", "Stopped cine playback");
+				return false;
+			}
+			const ok = startCine(cinePane);
+			if (ok) sessionRef.current?.log("view", `Started cine playback (${cinePane})`);
+			return ok;
+		});
+	}, [cinePane]);
+
+	// Changing the layout invalidates the playing pane; stop rather than guess. Also
+	// stop on unmount so the interval doesn't outlive the viewports.
+	useEffect(() => {
+		stopCine();
+		setCinePlaying(false);
+	}, [viewMode]);
+	useEffect(() => () => stopCine(), []);
+
+	// Keyboard shortcuts (skipped while typing): L/B/A/P/R/E/T measurement tools,
+	// G magnify, C crosshair, S snapshot, M measurements panel, V cine,
+	// Cmd/Ctrl+Z undo · Shift+Cmd/Ctrl+Z redo (strokes AND measurements).
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.metaKey || e.ctrlKey || e.altKey) return;
 			const target = e.target as HTMLElement | null;
 			if (
 				target &&
 				(target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
 			)
 				return;
-			const toolByKey: Record<string, MeasurementToolName> = {
+			const key = e.key.toLowerCase();
+			if ((e.metaKey || e.ctrlKey) && !e.altKey && key === "z") {
+				if (e.shiftKey) redoMaskEdit();
+				else undoMaskEdit();
+				e.preventDefault();
+				return;
+			}
+			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			const toolByKey: Record<string, PrimaryMouseToolName> = {
 				l: LENGTH_TOOL,
+				b: BIDIRECTIONAL_TOOL,
 				a: ANGLE_TOOL,
 				p: PROBE_TOOL,
 				r: ROI_TOOL,
 				e: ELLIPSE_TOOL,
+				t: ARROW_TOOL,
+				g: MAGNIFY_TOOL,
 			};
-			const key = e.key.toLowerCase();
 			if (toolByKey[key]) {
 				setEditMode(null); // measurement keys take the mouse back from the brush
 				setActiveMeasureTool((prev) => (prev === toolByKey[key] ? null : toolByKey[key]));
@@ -473,6 +536,8 @@ function VisualizationPage() {
 				setCrosshairToolActive(true);
 			} else if (key === "s") {
 				void takeSnapshot();
+			} else if (key === "v") {
+				toggleCine();
 			} else if (key === "m") {
 				setShowStats(false);
 				setShowEditPanel(false);
@@ -485,7 +550,7 @@ function VisualizationPage() {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [takeSnapshot]);
+	}, [takeSnapshot, toggleCine]);
 
 	// View-mode changes belong in the reading timeline (skip the initial mount).
 	const loggedViewMode = useRef<ViewMode | null>(null);
@@ -655,6 +720,20 @@ function VisualizationPage() {
 						{ ctImageIds: imageIds }
 					);
 					setLoading(false);
+					// Non-CT DICOM (MR/PET/…) needs its own window, not the CT presets —
+					// seed the sliders from the scan's VOI so the initial-window effect
+					// applies the right level instead of clipping the image flat.
+					if (result.initialVoi) {
+						setWindowWidth(result.initialVoi.windowWidth);
+						setWindowCenter(result.initialVoi.windowCenter);
+						setActivePreset("");
+					}
+					// Same idea for the 3D pane: CT transfer functions render MR as an
+					// opaque slab, so switch the preset set to Cornerstone's MR presets.
+					if (getCurrentVolumeModality() === "MR") {
+						setVolume3DPresets(VOLUME_3D_PRESETS_MR);
+						setVolumePreset(VOLUME_3D_PRESETS_MR[0].name);
+					}
 					setRenderingEngine(result.renderingEngine);
 					setViewportIds(result.viewportIds);
 					setVolumeId(result.volumeId);
@@ -862,6 +941,8 @@ function VisualizationPage() {
 	};
 
 	// The Measure button shows the active tool's icon (or the ruler when none is active).
+	// Magnify shares the activation state but has its own button, so it doesn't count here.
+	const measureToolActive = activeMeasureTool !== null && activeMeasureTool !== MAGNIFY_TOOL;
 	const ActiveMeasureIcon = MEASURE_TOOLS.find((t) => t.name === activeMeasureTool)?.Icon ?? IconRuler2;
 
 	// Center on an organ (from the sidebar): move both the 2D MPR crosshair and the 3D
@@ -1249,8 +1330,14 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 						<button className="vp-tb-mini" onClick={() => centerOnCursor()} title="Center on crosshair">Center</button>
 						<button
 							className="vp-tb-mini"
-							onClick={() => { zoomToFit(); setZoomLevel(1); }}
-							title="Reset zoom & pan"
+							onClick={() => {
+								// Also undoes any oblique-plane rotation from the crosshair's
+								// rotate handles, back to standard axial/sagittal/coronal.
+								resetMprOrientation();
+								zoomToFit();
+								setZoomLevel(1);
+							}}
+							title="Reset zoom, pan & MPR orientation"
 						>Reset</button>
 					</div>
 
@@ -1273,13 +1360,13 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 											<div className="vp-toolgroup" ref={measureGroupRef}>
 												<button
 													ref={measureBtnRef}
-													className={`vp-tool ${activeMeasureTool || measureMenuOpen ? "vp-tool--active" : ""}`}
+													className={`vp-tool ${measureToolActive || measureMenuOpen ? "vp-tool--active" : ""}`}
 													onClick={toggleMeasureMenu}
 													aria-label="Measurement tools"
 													aria-haspopup="menu"
 													aria-expanded={measureMenuOpen}
 												>
-													<ActiveMeasureIcon size={20} color={activeMeasureTool || measureMenuOpen ? "#08090b" : "white"} />
+													<ActiveMeasureIcon size={20} color={measureToolActive || measureMenuOpen ? "#08090b" : "white"} />
 													<span className="vp-tool__caret" />
 													<span className="vp-tool__tip">Measure</span>
 												</button>
@@ -1322,6 +1409,47 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 														document.body
 													)}
 											</div>
+											<button
+												className={`vp-tool ${activeMeasureTool === MAGNIFY_TOOL ? "vp-tool--active" : ""}`}
+												onClick={() => {
+													setEditMode(null);
+													setActiveMeasureTool((p) => (p === MAGNIFY_TOOL ? null : MAGNIFY_TOOL));
+												}}
+												aria-label="Magnify"
+											>
+												<IconZoomIn size={20} color={activeMeasureTool === MAGNIFY_TOOL ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Magnify (G) — click a pane to place a loupe</span>
+											</button>
+											<button
+												className={`vp-tool ${cinePlaying ? "vp-tool--active" : ""}`}
+												onClick={toggleCine}
+												aria-label={cinePlaying ? "Stop cine playback" : "Start cine playback"}
+											>
+												{cinePlaying ? (
+													<IconPlayerPause size={20} color="#08090b" />
+												) : (
+													<IconPlayerPlay size={20} color="white" />
+												)}
+												<span className="vp-tool__tip">
+													{cinePlaying ? "Stop cine (V)" : `Cine: play through ${cinePane} slices (V)`}
+												</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={() => undoMaskEdit()}
+												aria-label="Undo"
+											>
+												<IconArrowBackUp size={20} color="white" />
+												<span className="vp-tool__tip">Undo (⌘Z) — measurements & mask edits</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={() => redoMaskEdit()}
+												aria-label="Redo"
+											>
+												<IconArrowForwardUp size={20} color="white" />
+												<span className="vp-tool__tip">Redo (⇧⌘Z)</span>
+											</button>
 											{!isDicom && (
 												<button
 													className={`vp-tool ${showEditPanel || editMode ? "vp-tool--active" : ""}`}
@@ -1479,9 +1607,13 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 												<button
 													className={`vp-tool ${showOrganDetails ? "vp-tool--active" : ""}`}
 													onClick={() => {
-														setShowStats(false);
-														setShowMeasurePanel(false);
-														setShowOrganDetails(true);
+														if (showOrganDetails) {
+															setShowOrganDetails(false);
+														} else {
+															setShowStats(false);
+															setShowMeasurePanel(false);
+															setShowOrganDetails(true);
+														}
 													}}
 													aria-label="Organs"
 												>
@@ -1504,6 +1636,24 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 					<IconSettings size={20} color="white" />
 				</button>
 			)}
+
+			{/* Body row: left dock (Organs) · stage · right docks (stats/measurements/
+			     edit/AI). Docked panels sit IN FLOW beside the viewports — they push the
+			     stage narrower instead of overlaying it (same principle as the toolbar
+			     above pushing it down). The stage's ResizeObserver refits the canvases
+			     whenever a dock opens or closes. */}
+			<div className="vp-body">
+				{!isDicom && (
+					<OrganCheckbox
+						setCheckState={setCheckState}
+						checkState={checkState}
+						sessionId={sessionId}
+						setShowOrganDetails={setShowOrganDetails}
+						showOrganDetails={showOrganDetails}
+						labelColorMap={labelColorMap}
+						onJumpToOrgan={handleJumpToOrgan}
+					/>
+				)}
 
 			{/* Stage — fills the space below the toolbar; the viewports live here. */}
 			<div className="vp-stage" ref={stageRef}>
@@ -1649,7 +1799,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 								</button>
 								{threeDMode === "volume" && !volume3DFailed && (
 									<span className="vp-3dbar__presets">
-										{VOLUME_3D_PRESETS.map((preset) => (
+										{volume3DPresets.map((preset) => (
 											<button
 												key={preset.name}
 												className={`vp-3dbar__btn vp-3dbar__btn--preset ${volumePreset === preset.name ? "is-active" : ""}`}
@@ -1665,32 +1815,6 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 					</div>
 				</div>
 			</div>
-
-			{/* Fixed bottom bar for organ selection */}
-
-			{!isDicom && (
-				<OrganCheckbox
-					setCheckState={setCheckState}
-					checkState={checkState}
-					sessionId={sessionId}
-					setShowOrganDetails={setShowOrganDetails}
-					showOrganDetails={showOrganDetails}
-					labelColorMap={labelColorMap}
-					onJumpToOrgan={handleJumpToOrgan}
-				/>
-			)}
-
-			{/* Local-DICOM load failure: explain and offer the way back. */}
-			{dicomError && (
-				<div className="vp-loading" role="alert">
-					<div className="flex flex-col items-center gap-4" style={{ maxWidth: 420, textAlign: "center" }}>
-						<div className="vp-loading__text">{dicomError}</div>
-						<button className="vp-btn" onClick={() => { window.location.href = "/upload"; }}>
-							Back to upload
-						</button>
-					</div>
-				</div>
-			)}
 
 			{showStats && (
 				<div className="vp-stats">
@@ -1811,6 +1935,36 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 				/>
 			)}
 
+			{/* Kept mounted (display toggles) so the chat history survives open/close. */}
+			<AISidebar
+				open={showAISidebar}
+				onClose={() => setShowAISidebar(false)}
+				caseId={String(caseId)}
+				sessionId={sessionId}
+				availableOrgans={checkBoxData.map((organ) => organ.label)}
+				viewerState={{
+					view: viewMode,
+					opacity: opacityValue,
+					windowWidth,
+					windowCenter,
+					zoomLevel,
+				}}
+				actions={aiActions}
+			/>
+			</div>
+
+			{/* Local-DICOM load failure: explain and offer the way back. */}
+			{dicomError && (
+				<div className="vp-loading" role="alert">
+					<div className="flex flex-col items-center gap-4" style={{ maxWidth: 420, textAlign: "center" }}>
+						<div className="vp-loading__text">{dicomError}</div>
+						<button className="vp-btn" onClick={() => { window.location.href = "/upload"; }}>
+							Back to upload
+						</button>
+					</div>
+				</div>
+			)}
+
 			{readingSession && (
 				<SessionHUD
 					session={readingSession}
@@ -1836,21 +1990,6 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 				)
 			}
 
-			<AISidebar
-				open={showAISidebar}
-				onClose={() => setShowAISidebar(false)}
-				caseId={String(caseId)}
-				sessionId={sessionId}
-				availableOrgans={checkBoxData.map((organ) => organ.label)}
-				viewerState={{
-					view: viewMode,
-					opacity: opacityValue,
-					windowWidth,
-					windowCenter,
-					zoomLevel,
-				}}
-				actions={aiActions}
-			/>
 		</div >
 	);
 }

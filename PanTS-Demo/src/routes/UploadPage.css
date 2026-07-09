@@ -125,21 +125,21 @@
   margin-top: 10px;
   padding: 10px 12px;
   background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border: 1px dashed rgba(0, 0, 0, 0.18);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(0, 0, 0, 0.55);
   font-size: 13px;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
 .dicom-open-link:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.35);
+  color: #111111;
 }
 .dicom-open-link span {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10.5px;
-  color: #6a6a6a;
+  color: #8f8f8f;
   letter-spacing: 0.04em;
 }
 
@@ -472,7 +472,7 @@
 .result-btn:hover {
   background: rgba(0,0,0,.1);
   border-color: rgba(0,0,0,.25);
-  color: #fff;
+  color: #111111;
 }
 .result-btn-primary {
   background: #002D72;

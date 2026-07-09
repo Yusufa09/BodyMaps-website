@@ -34,6 +34,12 @@ export type LocalDicomSeries = {
 	skippedFiles: number;
 };
 
+// init() registers the wadouri loaders, metadata provider, and decode-worker
+// pool. Calling it more than once re-registers the worker ("already registered"
+// warning) and can orphan in-flight worker messages — so guard it. Survives
+// React StrictMode's double effect run and "back → reopen".
+let _dicomInited = false;
+
 /**
  * Register the files with the DICOM loader, read enough metadata to group them
  * by series, and return the imageIds of the largest series (a picked folder
@@ -41,22 +47,31 @@ export type LocalDicomSeries = {
  * sorts the slices spatially, so imageId order here doesn't matter.
  */
 export async function loadLocalDicomSeries(files: File[]): Promise<LocalDicomSeries> {
-	const [{ imageLoader, metaData }, dicomLoader] = await Promise.all([
+	const [{ metaData }, dicomLoader] = await Promise.all([
 		import("@cornerstonejs/core"),
 		import("@cornerstonejs/dicom-image-loader"),
 	]);
-	dicomLoader.init(); // registers the wadouri/dicomfile loaders + metadata provider
+	if (!_dicomInited) {
+		dicomLoader.init();
+		_dicomInited = true;
+	}
+	const wadouri = dicomLoader.wadouri;
 
 	const candidates = files.filter(looksLikeDicom);
 	const bySeries = new Map<string, { imageIds: string[]; description: string }>();
 	let skippedFiles = files.length - candidates.length;
 
 	for (const file of candidates) {
-		const imageId = dicomLoader.wadouri.fileManager.add(file);
+		const imageId = wadouri.fileManager.add(file);
 		try {
-			// Loading once parses the file and populates the metadata provider (the
-			// volume loader needs geometry up front; images stay cached for reuse).
-			await imageLoader.loadAndCacheImage(imageId);
+			// Parse only the DICOM *header* — this populates the metadata provider so
+			// the volume loader can compute geometry, without decoding pixels. The
+			// volume loader decodes the slices itself when it builds the volume, so
+			// decoding here would double the work AND flood the decode workers (which
+			// is what made large series crawl / drop worker messages). This mirrors
+			// wadouri.loadImage's own seam, minus the pixel decode.
+			const { scheme, url } = wadouri.parseImageId(imageId);
+			await wadouri.dataSetCacheManager.load(url, wadouri.getLoaderForScheme(scheme), imageId);
 			const series = metaData.get("generalSeriesModule", imageId) as
 				| { seriesInstanceUID?: string; seriesDescription?: string }
 				| undefined;

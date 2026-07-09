@@ -67,10 +67,12 @@ export function condenseEvents(events: SessionEvent[]): CondensedEvent[] {
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
 	Length: "Distance",
+	Bidirectional: "Bidirectional",
 	Angle: "Angle",
 	Probe: "HU probe",
 	RectangleROI: "Rectangle ROI",
 	EllipticalROI: "Ellipse ROI",
+	ArrowAnnotate: "Arrow note",
 };
 
 export function toolDisplayName(tool: string): string {

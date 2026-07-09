@@ -1,23 +1,19 @@
+/* Docked right of the stage (in flow, not a slide-over). Hidden via display so it
+   stays mounted — the chat history survives open/close — without taking space. */
 .ai-sidebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
+  display: none;
+  flex: 0 0 min(420px, 92vw);
   width: min(420px, 92vw);
-  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
   background: rgba(12, 18, 32, 0.96);
   color: #f8fafc;
   border-left: 1px solid rgba(148, 163, 184, 0.28);
-  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38);
-  transform: translateX(104%);
-  transition: transform 180ms ease;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .ai-sidebar.is-open {
-  transform: translateX(0);
+  display: flex;
 }
 
 .ai-sidebar__header {

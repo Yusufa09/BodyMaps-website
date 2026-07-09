@@ -47,6 +47,8 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	disableVolume3D: vi.fn(),
 	applyVolume3DPreset: vi.fn(),
 	VOLUME_3D_PRESETS: [{ name: "CT-Bone", label: "Bone" }],
+	VOLUME_3D_PRESETS_MR: [{ name: "MR-Default", label: "Default" }],
+	getCurrentVolumeModality: () => undefined,
 	// Mask editing (brush/eraser + labelmap export)
 	setActiveMaskEditTool: vi.fn(),
 	setActiveEditSegment: vi.fn(),
@@ -64,6 +66,13 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	ROI_TOOL: "RectangleROI",
 	ANGLE_TOOL: "Angle",
 	ELLIPSE_TOOL: "EllipticalROI",
+	BIDIRECTIONAL_TOOL: "Bidirectional",
+	ARROW_TOOL: "ArrowAnnotate",
+	MAGNIFY_TOOL: "AdvancedMagnify",
+	// Cine playback + oblique-MPR reset
+	startCine: vi.fn(() => false),
+	stopCine: vi.fn(),
+	resetMprOrientation: vi.fn(),
 }));
 
 vi.mock("../helpers/NiiVueNifti", () => ({

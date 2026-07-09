@@ -1522,3 +1522,169 @@ def list_edited_masks(case_id):
     except Exception as error:
         print("[list_edited_masks error]", type(error).__name__, error)
         return jsonify({"error": "Failed to list edited masks."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Advanced analysis (viewer's AI-segment tool + vessel CPR panel).
+# Additive and read-only against the dataset — loads image_only/ and mask_only/
+# but writes nothing there. Heavy numeric work lives in services/advanced_analysis.
+# ---------------------------------------------------------------------------
+
+import threading
+
+# Each of these requests loads a CT volume into worker RAM, so unbounded
+# concurrency is an OOM waiting to happen. Cap in-flight analyses per process
+# (gunicorn workers each get their own slots); extras get an immediate 503
+# instead of queueing until the worker starves.
+_ANALYSIS_SLOTS = threading.BoundedSemaphore(2)
+_ANALYSIS_BUSY_RESPONSE = (
+    {"error": "The analysis service is busy — try again in a moment."},
+    503,
+)
+
+def _safe_case_id(case_id):
+    # Traversal safety: require digits, then hand get_panTS_id an int so the
+    # user value can't carry a "../" or "/" payload into the CT/mask path. The
+    # int() cast is also the barrier CodeQL recognizes as sanitizing the taint.
+    if not str(case_id).isdigit():
+        raise ValueError("case_id must be numeric")
+    return int(case_id)
+
+
+def _case_ct_path(case_id, low=False):
+    case_dir = f"{Constants.PANTS_PATH}/image_only/{get_panTS_id(_safe_case_id(case_id))}"
+    path = f"{case_dir}/{Constants.MAIN_NIFTI_FILENAME}"
+    if low:
+        low_path = path.replace('.nii.gz', '_lowres.nii.gz')
+        if os.path.exists(low_path):
+            return low_path
+    return path
+
+
+def _case_mask_path(case_id, low=False):
+    case_dir = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(_safe_case_id(case_id))}"
+    path = f"{case_dir}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
+    if low:
+        low_path = path.replace('.nii.gz', '_lowres.nii.gz')
+        if os.path.exists(low_path):
+            return low_path
+    return path
+
+
+@api_blueprint.route('/interactive-segment/<case_id>', methods=['POST'])
+def interactive_segment(case_id):
+    """Click-to-segment: seed prompt -> proposed mask (.nii.gz in CT geometry).
+
+    Body JSON: { point_lps:[x,y,z] | point_ijk:[i,j,k], tolerance?, box_lps?,
+                 res?: "low"|"full" }. res should match the resolution the viewer
+                 loaded so the returned mask's voxel grid aligns with the labelmap.
+    """
+    if not _ANALYSIS_SLOTS.acquire(blocking=False):
+        return jsonify(_ANALYSIS_BUSY_RESPONSE[0]), _ANALYSIS_BUSY_RESPONSE[1]
+    try:
+        import numpy as np
+        from services.advanced_analysis import segment_from_prompt
+        body = request.get_json(force=True, silent=True) or {}
+        low = (body.get("res") or "low").lower() == "low"
+        ct_path = _case_ct_path(case_id, low=low)
+        if not os.path.exists(ct_path):
+            return jsonify({"error": "CT not found for this case on the server."}), 404
+
+        ct_obj = nib.load(ct_path)
+        # float32: half the RAM of nibabel's float64 default — these are public
+        # endpoints and a full-res CT at float64 is multiple GB per request.
+        ct = ct_obj.get_fdata(dtype=np.float32)
+        mask = segment_from_prompt(ct, ct_obj.affine, body)
+        if int(mask.sum()) == 0:
+            return jsonify({"error": "Nothing grew from that point — try a different spot or a higher tolerance."}), 422
+
+        out = nib.Nifti1Image(mask, ct_obj.affine, ct_obj.header)
+        out.header.set_data_dtype('uint8')
+        # nibabel serializes an uncompressed .nii to bytes; gzip it ourselves.
+        import gzip as _gzip
+        gz = _gzip.compress(out.to_bytes())
+        resp = make_response(gz)
+        resp.headers['Content-Type'] = 'application/gzip'
+        resp.headers['X-Mask-Voxels'] = str(int(mask.sum()))
+        resp.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return resp
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as error:
+        print("[interactive_segment error]", type(error).__name__, error)
+        return jsonify({"error": "Interactive segmentation failed."}), 500
+    finally:
+        _ANALYSIS_SLOTS.release()
+
+
+@api_blueprint.route('/vessel-cpr/<case_id>', methods=['POST'])
+def vessel_cpr(case_id):
+    """Straightened vessel reformat + tumour-contact metrics for staging.
+
+    Body JSON: { vessel_label:int, lesion_label?:int (default 22 pancreatic
+                 lesion), res?, slab_radius_mm?, window? }. Returns metrics +
+                 the reformat as a base64 PNG (already windowed for display).
+    """
+    if not _ANALYSIS_SLOTS.acquire(blocking=False):
+        return jsonify(_ANALYSIS_BUSY_RESPONSE[0]), _ANALYSIS_BUSY_RESPONSE[1]
+    try:
+        import numpy as np
+        from services.advanced_analysis import analyze_vessel
+        body = request.get_json(force=True, silent=True) or {}
+        vessel_label = int(body.get("vessel_label", 0))
+        if vessel_label <= 0:
+            return jsonify({"error": "vessel_label is required."}), 400
+        lesion_label = int(body.get("lesion_label", 22))
+        low = (body.get("res") or "low").lower() == "low"
+
+        ct_path = _case_ct_path(case_id, low=low)
+        mask_path = _case_mask_path(case_id, low=low)
+        if not (os.path.exists(ct_path) and os.path.exists(mask_path)):
+            return jsonify({"error": "CT or segmentation not found for this case."}), 404
+
+        ct_obj = nib.load(ct_path)
+        # float32 (see interactive_segment): halves the per-request RAM footprint.
+        ct = ct_obj.get_fdata(dtype=np.float32)
+        labels = nib.load(mask_path).get_fdata(dtype=np.float32)
+        vessel_mask = (np.round(labels) == vessel_label).astype(np.uint8)
+        if vessel_mask.sum() == 0:
+            return jsonify({"error": "That vessel isn't segmented in this case."}), 422
+        lesion_mask = (np.round(labels) == lesion_label).astype(np.uint8)
+        has_lesion = lesion_mask.sum() > 0
+
+        res = analyze_vessel(
+            ct, ct_obj.affine, vessel_mask,
+            lesion_mask if has_lesion else None,
+            slab_radius_mm=float(body.get("slab_radius_mm", 20.0)),
+        )
+
+        # Window the reformat (default soft-tissue) and PNG-encode it.
+        w = body.get("window") or {}
+        width = float(w.get("width", 400)); center = float(w.get("center", 40))
+        lo, hi = center - width / 2, center + width / 2
+        img = np.clip((res["reformat"] - lo) / max(hi - lo, 1e-6), 0, 1)
+        img8 = (img * 255).astype(np.uint8)
+
+        from PIL import Image
+        png = io.BytesIO()
+        Image.fromarray(img8, mode="L").save(png, format="PNG")
+        import base64
+        data_url = "data:image/png;base64," + base64.b64encode(png.getvalue()).decode()
+
+        return jsonify({
+            "length_mm": round(res["length_mm"], 1),
+            "max_contact_deg": round(res["max_contact_deg"], 1),
+            "contact_length_mm": round(res["contact_length_mm"], 1),
+            "has_lesion": bool(has_lesion),
+            "num_points": res["num_points"],
+            "contact_profile": [round(v, 1) for v in res["contact_profile"]],
+            "reformat_png": data_url,
+            "reformat_size": list(res["reformat"].shape),
+        })
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as error:
+        print("[vessel_cpr error]", type(error).__name__, error)
+        return jsonify({"error": "Vessel analysis failed."}), 500
+    finally:
+        _ANALYSIS_SLOTS.release()

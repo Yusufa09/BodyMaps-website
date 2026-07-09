@@ -36,11 +36,25 @@
   background-color: grey;
 }
 
-/* The stage holds the viewports and fills whatever height is left under the top
-   toolbar (it flexes). position:relative anchors the absolutely-filled container. */
+/* Body row under the toolbar: left dock (Organs) · stage · right docks (stats /
+   measurements / mask edit / AI). Docked panels are in NORMAL FLOW — they push the
+   stage narrower instead of overlaying the viewports, the same way the toolbar
+   above pushes them down. The stage's ResizeObserver refits the canvases whenever
+   a dock opens or closes. */
+.vp-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The stage holds the viewports and fills whatever width/height is left beside
+   the docks (it flexes). position:relative anchors the absolutely-filled container. */
 .vp-stage {
   flex: 1 1 auto;
   position: relative;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #000;
@@ -345,8 +359,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 12px 14px;
+  padding: 12px 20px;
   background: rgba(14, 15, 18, 0.92);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -473,7 +487,7 @@
   align-self: stretch;
   min-height: 26px;
   background: var(--vp-border);
-  margin: 0 2px;
+  margin: 0 6px;
 }
 
 /* Segmented controls in the bar sit in one row and size to content. */
@@ -482,7 +496,7 @@
 }
 .vp-topbar .vp-seg__btn {
   flex: 0 0 auto;
-  padding: 6px 9px;
+  padding: 7px 12px;
   font-size: 11.5px;
 }
 
@@ -491,7 +505,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 14px;
 }
 .vp-tb-slider {
   display: flex;
@@ -819,14 +833,21 @@
 }
 
 /* ---- Organs / Class Map panel (left side) ---- */
+/* Docked left of the stage (in flow). Hidden with display (not a slide transform)
+   so it keeps its mounted state without occupying space when closed. */
 .vp-organs {
+  display: none;
+  flex: 0 0 288px;
+  min-height: 0;
   font-family: var(--vp-font);
   background: rgba(14, 15, 18, 0.94);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-right: 1px solid var(--vp-border);
-  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
   color: var(--vp-text);
+}
+.vp-organs--open {
+  display: flex;
 }
 .vp-organs__title {
   font-family: var(--vp-font);
@@ -926,22 +947,17 @@
   border-color: var(--vp-accent);
 }
 
-/* ---- Organ statistics panel (right side) ---- */
+/* ---- Organ statistics panel — docked right of the stage (in flow, not overlay) ---- */
 .vp-stats {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  bottom: 16px;
+  flex: 0 0 350px;
   width: 350px;
-  z-index: 48;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: rgba(14, 15, 18, 0.92);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid var(--vp-border);
-  border-radius: 14px;
-  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  border-left: 1px solid var(--vp-border);
   font-family: var(--vp-font);
   overflow: hidden;
 }

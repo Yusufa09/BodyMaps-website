@@ -1,4 +1,4 @@
-import { cache, init as coreInit, Enums, eventTarget, getRenderingEngine, imageLoader, RenderingEngine, setVolumesForViewports, utilities as csCoreUtils, volumeLoader } from "@cornerstonejs/core";
+import { cache, init as coreInit, Enums, eventTarget, getRenderingEngine, imageLoader, metaData, RenderingEngine, setVolumesForViewports, utilities as csCoreUtils, volumeLoader } from "@cornerstonejs/core";
 import type { ColorLUT } from "@cornerstonejs/core/types";
 import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init as niftiImageLoaderInit } from "@cornerstonejs/nifti-volume-loader";
 import * as cornerstoneTools from '@cornerstonejs/tools';
@@ -21,20 +21,34 @@ const {
     RectangleROITool,
     AngleTool,
     EllipticalROITool,
+    BidirectionalTool,
+    ArrowAnnotateTool,
+    AdvancedMagnifyTool,
     BrushTool,
     TrackballRotateTool,
 } = cornerstoneTools;
 
 // Measurement tools the toolbar can switch the primary mouse button to. Length =
-// distance in mm, Probe = HU readout at a point, RectangleROI/EllipticalROI =
-// area + mean/max/min HU, Angle = angle in degrees between two segments.
+// distance in mm, Bidirectional = long + short axis (RECIST), Probe = HU readout
+// at a point, RectangleROI/EllipticalROI = area + mean/max/min HU, Angle = angle
+// in degrees between two segments, Arrow = labeled pointer at a finding.
 export const LENGTH_TOOL = LengthTool.toolName;
+export const BIDIRECTIONAL_TOOL = BidirectionalTool.toolName;
 export const PROBE_TOOL = ProbeTool.toolName;
 export const ROI_TOOL = RectangleROITool.toolName;
 export const ANGLE_TOOL = AngleTool.toolName;
 export const ELLIPSE_TOOL = EllipticalROITool.toolName;
-export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL] as const;
+export const ARROW_TOOL = ArrowAnnotateTool.toolName;
+export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, BIDIRECTIONAL_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL, ARROW_TOOL] as const;
 export type MeasurementToolName = (typeof MEASUREMENT_TOOL_NAMES)[number];
+
+// Magnify is a viewing aid, not a measurement: it shares the activation path (one
+// owner of the primary button) but its loupe annotations are excluded from the
+// measurement inventory/report, and are removed when the tool is put down.
+// AdvancedMagnifyTool is required — plain MagnifyTool throws on volume viewports.
+// (Annotated: its d.ts declares `static toolName: any`, which would poison the union.)
+export const MAGNIFY_TOOL: string = AdvancedMagnifyTool.toolName;
+export type PrimaryMouseToolName = MeasurementToolName | typeof MAGNIFY_TOOL;
 
 // Mask-editing tools: two instances of BrushTool, one painting the active segment,
 // one erasing (strategy ERASE writes segment 0). Registered passive; the toolbar's
@@ -251,6 +265,9 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(RectangleROITool);
     cornerstoneTools.addTool(AngleTool);
     cornerstoneTools.addTool(EllipticalROITool);
+    cornerstoneTools.addTool(BidirectionalTool);
+    cornerstoneTools.addTool(ArrowAnnotateTool);
+    cornerstoneTools.addTool(AdvancedMagnifyTool);
     cornerstoneTools.addTool(BrushTool);
     toolGroup.addTool(PanTool.toolName);
     toolGroup.addTool(ZoomTool.toolName);
@@ -260,6 +277,9 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     toolGroup.addTool(RectangleROITool.toolName);
     toolGroup.addTool(AngleTool.toolName);
     toolGroup.addTool(EllipticalROITool.toolName);
+    toolGroup.addTool(BidirectionalTool.toolName);
+    toolGroup.addTool(ArrowAnnotateTool.toolName);
+    toolGroup.addTool(AdvancedMagnifyTool.toolName);
     // Mask editing: paint fills the active segment, the eraser writes segment 0.
     toolGroup.addToolInstance(EDIT_BRUSH, BrushTool.toolName, {
         activeStrategy: "FILL_INSIDE_CIRCLE",
@@ -354,6 +374,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     for (const toolName of MEASUREMENT_TOOL_NAMES) {
         toolGroup.setToolPassive(toolName);
     }
+    toolGroup.setToolPassive(MAGNIFY_TOOL);
     // Brush/eraser start disabled — they only own the mouse while Edit mode is on.
     for (const toolName of EDIT_TOOL_NAMES) {
         toolGroup.setToolDisabled(toolName);
@@ -409,10 +430,31 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
 
     renderingEngine.renderViewports(viewportInputArray.map((viewport) => viewport.viewportId));
     setLoading(false);
+
+    // Local DICOM can be any modality (MR, PET, …), so the CT window presets are
+    // meaningless — seed the viewer with the scan's *own* VOI from the DICOM header
+    // (WindowCenter/WindowWidth). Without this the default CT soft-tissue window
+    // clips non-CT data flat (uniform grey). NIfTI dataset scans are CT, so they
+    // keep the preset-driven default (no VOI here).
+    let initialVoi: { windowCenter: number; windowWidth: number } | undefined;
+    if (opts?.ctImageIds && imageIds.length) {
+        const voi = metaData.get("voiLutModule", imageIds[0]) as
+            | { windowCenter?: number | number[]; windowWidth?: number | number[] }
+            | undefined;
+        const firstNum = (v: number | number[] | undefined) =>
+            Array.isArray(v) ? v[0] : v;
+        const wc = firstNum(voi?.windowCenter);
+        const ww = firstNum(voi?.windowWidth);
+        if (typeof wc === "number" && typeof ww === "number" && ww > 0) {
+            initialVoi = { windowCenter: wc, windowWidth: ww };
+        }
+    }
+
     return {
         viewportIds: viewportInputArray.map((viewport) => viewport.viewportId),
         renderingEngine: renderingEngine,
-        volumeId: ctVolumeId
+        volumeId: ctVolumeId,
+        initialVoi,
     }
 }
 
@@ -483,14 +525,31 @@ export function toggleCrosshairTool(enable: boolean) {
   }
 }
 
-// Activate a measurement tool on the primary mouse button, or pass `null` to hand the
-// primary button back to navigation (the caller restores crosshair/pan afterwards).
-// While a measure tool is active we disable crosshair + pan so clicks draw, not navigate.
-export function setActiveMeasurementTool(toolName: MeasurementToolName | null) {
+// The magnify loupes only make sense while the tool is in hand — remove them when
+// it's put down (AdvancedMagnify cleans up its magnify viewport on ANNOTATION_REMOVED).
+function _removeMagnifyAnnotations() {
+  try {
+    const all = annotation.state.getAllAnnotations() ?? [];
+    for (const a of [...all]) {
+      if (a?.metadata?.toolName === MAGNIFY_TOOL && a.annotationUID) {
+        annotation.state.removeAnnotation(a.annotationUID);
+      }
+    }
+  } catch {
+    /* annotation state not ready */
+  }
+}
+
+// Activate a measurement tool (or the magnify loupe) on the primary mouse button, or
+// pass `null` to hand the primary button back to navigation (the caller restores
+// crosshair/pan afterwards). While one is active we disable crosshair + pan so clicks
+// draw, not navigate.
+export function setActiveMeasurementTool(toolName: PrimaryMouseToolName | null) {
   const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
   if (!toolGroup) return;
   // Reset every measure tool to passive first (keeps existing annotations editable).
-  for (const name of MEASUREMENT_TOOL_NAMES) toolGroup.setToolPassive(name);
+  for (const name of [...MEASUREMENT_TOOL_NAMES, MAGNIFY_TOOL]) toolGroup.setToolPassive(name);
+  if (toolName !== MAGNIFY_TOOL) _removeMagnifyAnnotations();
   if (!toolName) return;
   toolGroup.setToolDisabled(CrosshairsTool.toolName);
   toolGroup.setToolDisabled(PanTool.toolName);
@@ -546,7 +605,8 @@ export function setMaskBrushSize(mm: number) {
   }
 }
 
-// Cornerstone records every labelmap stroke as a memo on its shared history.
+// Cornerstone records every labelmap stroke AND every measurement draw/edit as a
+// memo on the same shared history — so these double as the global viewer undo/redo.
 export function undoMaskEdit() {
   csCoreUtils.HistoryMemo.DefaultHistoryMemo.undo();
   currentRenderingEngine?.render();
@@ -606,11 +666,11 @@ export function getSegmentationExport(): LabelmapExport | null {
   };
 }
 
-// Remove only measurement annotations (Length/Probe/ROI), leaving the crosshair intact.
+// Remove only measurement annotations (and any magnify loupes), leaving the crosshair intact.
 export function clearMeasurements() {
   try {
     const all = annotation.state.getAllAnnotations() ?? [];
-    const names = MEASUREMENT_TOOL_NAMES as readonly string[];
+    const names = [...MEASUREMENT_TOOL_NAMES, MAGNIFY_TOOL] as readonly string[];
     for (const a of [...all]) {
       const toolName = a?.metadata?.toolName;
       if (toolName && names.includes(toolName) && a.annotationUID) {
@@ -646,9 +706,16 @@ function formatNum(n: number, digits = 1): string {
 
 // Each tool caches different stats keys; scan for the ones we know how to show.
 function formatAnnotationValue(a: any): string {
+  // ArrowAnnotate stores its note as free text, not cached stats.
+  const text = a?.data?.text;
+  if (typeof text === "string" && text.trim()) return text.trim();
   const statsByTarget = a?.data?.cachedStats ?? {};
   for (const stats of Object.values(statsByTarget) as any[]) {
     if (!stats || typeof stats !== "object") continue;
+    // Bidirectional: long × short axis (RECIST-style).
+    if (typeof stats.length === "number" && typeof stats.width === "number") {
+      return `${formatNum(stats.length)} × ${formatNum(stats.width)} ${stats.unit ?? "mm"}`;
+    }
     if (typeof stats.length === "number") return `${formatNum(stats.length)} ${stats.unit ?? "mm"}`;
     if (typeof stats.angle === "number") return `${formatNum(stats.angle)}°`;
     if (typeof stats.area === "number") {
@@ -712,6 +779,64 @@ export function jumpToMeasurement(uid: string): [number, number, number] | null 
   moveCornerstoneCrosshairToMm(c);
   currentRenderingEngine?.render();
   return c;
+}
+
+// ---------------------------------------------------------------------------
+// Cine playback — auto-scroll one MPR pane through its slices at a fixed frame
+// rate (Cornerstone's cine utility natively supports volume viewports).
+// ---------------------------------------------------------------------------
+
+export type CinePane = "axial" | "sagittal" | "coronal";
+const CINE_VIEWPORT_BY_PANE: Record<CinePane, string> = {
+  axial: viewportId1,
+  sagittal: viewportId2,
+  coronal: viewportId3,
+};
+
+let _cineElement: HTMLDivElement | null = null;
+
+export function startCine(pane: CinePane, fps = 12): boolean {
+  const engine = getRenderingEngine(renderingEngineId);
+  if (!engine) return false;
+  stopCine(); // one clip at a time
+  try {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- element isn't on IViewport */
+    const viewport = engine.getViewport(CINE_VIEWPORT_BY_PANE[pane]) as any;
+    const element = viewport?.element as HTMLDivElement | undefined;
+    if (!element) return false;
+    cornerstoneTools.utilities.cine.playClip(element, { framesPerSecond: fps, loop: true });
+    _cineElement = element;
+    return true;
+  } catch (e) {
+    console.warn("Cine playback unavailable:", e);
+    return false;
+  }
+}
+
+export function stopCine() {
+  if (!_cineElement) return;
+  try {
+    cornerstoneTools.utilities.cine.stopClip(_cineElement);
+  } catch {
+    /* viewport already torn down */
+  }
+  _cineElement = null;
+}
+
+// Undo any oblique-plane rotation / slab thickness back to standard orthogonal
+// axial/sagittal/coronal (the crosshair's rotation handles create oblique planes;
+// this is the way back). Also recenters and resets zoom/pan on all three panes.
+export function resetMprOrientation() {
+  const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+  const tool = toolGroup?.getToolInstance(CrosshairsTool.toolName) as
+    | { resetCrosshairs?: () => void }
+    | undefined;
+  try {
+    tool?.resetCrosshairs?.();
+  } catch {
+    /* crosshair tool not active/ready */
+  }
+  currentRenderingEngine?.render();
 }
 
 export type MeasurementChangeKind = "completed" | "modified" | "removed";
@@ -861,16 +986,9 @@ export async function upgradeCtVolume(fullResCtUrl: string): Promise<string | nu
     }
     await _rebuildSegmentationRepresentations();
 
-    // If the shaded 3D volume view is open (its own engine), move it too.
-    try {
-      const engine3d = getRenderingEngine(volume3DEngineId) as RenderingEngine | undefined;
-      if (engine3d?.getViewport(volume3DViewportId)) {
-        await setVolumesForViewports(engine3d, [{ volumeId: newVolumeId }], [volume3DViewportId]);
-        applyVolume3DPreset(_lastVolume3DPreset);
-      }
-    } catch {
-      /* 3D view not enabled */
-    }
+    // The shaded 3D volume view renders its own private copy of the CT (never the
+    // shared volume — see _volume3DCopyId), so there is nothing to re-target here.
+    // If it's open it keeps its current copy; the next open copies the new volume.
 
     _currentCtVolumeId = newVolumeId;
     engine.renderViewports([...MPR_VIEWPORT_IDS]);
@@ -897,7 +1015,79 @@ export const VOLUME_3D_PRESETS = [
   { name: "CT-MIP", label: "MIP" },
 ] as const;
 
+// MR intensities aren't Hounsfield units, so the CT transfer functions above
+// render MR as an opaque slab. Cornerstone ships MR presets — the viewer offers
+// these instead when the loaded volume is MR (local DICOM can be any modality).
+export const VOLUME_3D_PRESETS_MR = [
+  { name: "MR-Default", label: "Default" },
+  { name: "MR-Angio", label: "Angio" },
+  { name: "MR-MIP", label: "MIP" },
+  { name: "MR-T2-Brain", label: "T2 Brain" },
+] as const;
+
+// Modality of the volume the viewer is showing (DICOM metadata; NIfTI dataset
+// cases have no Modality and return undefined — they're CT by construction).
+export function getCurrentVolumeModality(): string | undefined {
+  if (!_currentCtVolumeId) return undefined;
+  return (cache.getVolume(_currentCtVolumeId) as any)?.metadata?.Modality;
+}
+
 let _lastVolume3DPreset: string = VOLUME_3D_PRESETS[0].name;
+
+// The 3D pane's private copy of the CT volume. A cached volume owns exactly ONE
+// vtkStreamingOpenGLTexture, which stores a single GL context + texture handle —
+// so a volume can only ever be rendered by ONE engine. Sharing the MPR volumeId
+// with the 3D engine makes the two contexts fight over that texture: the 3D pane
+// stays black (its frames were "already uploaded" — into the MPR context) and the
+// next MPR render draws the CT through a foreign handle (black CT, labelmap only).
+let _volume3DCopyId: string | null = null;
+
+async function _getOrCreateVolume3DCopy(sourceVolumeId: string): Promise<string | null> {
+  const copyId = `${sourceVolumeId}-vr3d`;
+  if (cache.getVolume(copyId)) return copyId;
+  try {
+    const source = cache.getVolume(sourceVolumeId) as any;
+    let scalarData = source?.voxelManager?.getCompleteScalarDataArray?.();
+    if (!scalarData?.length && Array.isArray(source?.imageIds) && source.imageIds.length) {
+      // DICOM (wadouri) volumes stream frames straight onto the GPU texture and can
+      // drop their per-slice images from the IMAGE cache — getCompleteScalarDataArray
+      // then finds no images and silently returns an EMPTY array ("Number of
+      // components 0 must be 1, 3 or 4" downstream). Re-decode the slices through the
+      // image loader (the parsed datasets are still cached) and assemble the buffer.
+      // Sequential on purpose: don't flood the decode workers on big series.
+      const [w, h] = source.dimensions;
+      const sliceLen = w * h;
+      const slices: any[] = [];
+      for (const imageId of source.imageIds) {
+        slices.push(await imageLoader.loadAndCacheImage(imageId));
+      }
+      const pixelsOf = (img: any) =>
+        img?.voxelManager?.getScalarData?.() ?? img?.getPixelData?.();
+      const first = pixelsOf(slices[0]);
+      if (first?.length) {
+        const Ctor = first.constructor as new (n: number) => typeof first;
+        scalarData = new Ctor(sliceLen * source.dimensions[2]);
+        slices.forEach((img, i) => {
+          const px = pixelsOf(img);
+          if (px?.length) scalarData.set(px.subarray(0, sliceLen), i * sliceLen);
+        });
+      }
+    }
+    if (!scalarData?.length) return null;
+    (volumeLoader.createLocalVolume as any)(copyId, {
+      metadata: source.metadata,
+      dimensions: source.dimensions,
+      spacing: source.spacing,
+      origin: source.origin,
+      direction: source.direction,
+      scalarData,
+    });
+    return copyId;
+  } catch (e) {
+    console.warn("Volume rendering: could not create the 3D volume copy.", e);
+    return null;
+  }
+}
 
 export function applyVolume3DPreset(presetName: string) {
   _lastVolume3DPreset = presetName;
@@ -939,6 +1129,12 @@ export async function enableVolume3D(
     }
     await _waitForLayout(element);
 
+    // Never hand the MPR volume to this engine — render a private copy with its
+    // own GL texture (see the note by _volume3DCopyId).
+    const copyId = await _getOrCreateVolume3DCopy(_currentCtVolumeId);
+    if (!copyId) return false;
+    _volume3DCopyId = copyId;
+
     // Dedicated engine — never share the MPR engine (see the note by its id).
     const engine = _getVolume3DEngine();
     engine.enableElement({
@@ -953,7 +1149,7 @@ export async function enableVolume3D(
     const viewport = engine.getViewport(volume3DViewportId) as any;
     // Canonical VOLUME_3D recipe: attach the volume, THEN the preset (setPreset
     // no-ops if the volume actor isn't present yet), then frame + render.
-    await viewport.setVolumes([{ volumeId: _currentCtVolumeId }]);
+    await viewport.setVolumes([{ volumeId: copyId }]);
     viewport.setProperties({ preset: presetName });
     _lastVolume3DPreset = presetName;
     // Match the on-screen canvas to the (now laid-out) element before framing.
@@ -1006,6 +1202,30 @@ export function disableVolume3D() {
   } catch {
     /* engine already gone */
   }
+  // Free the private CT copy (CPU + GPU); reopening the pane rebuilds it.
+  // createLocalVolume backs the copy with PER-SLICE images in the IMAGE cache
+  // (`<copyId>_slice_<i>`), and removeVolumeLoadObject only deletes the volume
+  // entry — it leaves those slice images allocated. Without freeing them too,
+  // every Meshes→Volume round trip leaks a full CT copy until the next
+  // createLocalVolume fails its cache-size check and the pane reports "volume
+  // rendering isn't available" even though the GPU is fine.
+  try {
+    if (_volume3DCopyId) {
+      const copyVolume = cache.getVolume(_volume3DCopyId);
+      const sliceImageIds: string[] = copyVolume?.imageIds ?? [];
+      cache.removeVolumeLoadObject(_volume3DCopyId);
+      for (const imageId of sliceImageIds) {
+        try {
+          cache.removeImageLoadObject(imageId, { force: true });
+        } catch {
+          /* slice already evicted */
+        }
+      }
+    }
+  } catch {
+    /* already evicted */
+  }
+  _volume3DCopyId = null;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

@@ -1,20 +1,16 @@
 /* Measurements inventory — same surface language as the Organ Statistics panel
-   (.vp-stats in VisualizationPage.css), sharing the fixed right-side slot. */
+   (.vp-stats in VisualizationPage.css), sharing the docked right-side slot
+   (in flow beside the stage, not an overlay). */
 .vp-measure {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  flex: 0 0 330px;
   width: 330px;
-  max-height: calc(100vh - 32px);
-  z-index: 48;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: rgba(14, 15, 18, 0.92);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
-  border-radius: 14px;
-  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  border-left: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
   font-family: var(--vp-font, system-ui, sans-serif);
   overflow: hidden;
 }
