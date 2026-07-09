@@ -1,0 +1,164 @@
+/* Measurements inventory — same surface language as the Organ Statistics panel
+   (.vp-stats in VisualizationPage.css), sharing the fixed right-side slot. */
+.vp-measure {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 330px;
+  max-height: calc(100vh - 32px);
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  background: rgba(14, 15, 18, 0.92);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
+  border-radius: 14px;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  font-family: var(--vp-font, system-ui, sans-serif);
+  overflow: hidden;
+}
+.vp-measure__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
+}
+.vp-measure__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vp-measure__clear {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
+  color: var(--vp-text-dim, rgba(255, 255, 255, 0.5));
+  font-family: var(--vp-mono, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.vp-measure__clear:hover {
+  color: var(--vp-text, rgba(255, 255, 255, 0.92));
+  background: rgba(255, 255, 255, 0.12);
+}
+.vp-measure__close {
+  background: transparent;
+  border: none;
+  color: var(--vp-text-dim, rgba(255, 255, 255, 0.5));
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.vp-measure__close:hover { color: var(--vp-text, rgba(255, 255, 255, 0.92)); }
+
+.vp-measure__empty {
+  padding: 22px 18px;
+  font-size: 13px;
+  color: var(--vp-text-dim, rgba(255, 255, 255, 0.5));
+  text-align: left;
+}
+.vp-measure__empty span {
+  font-size: 12px;
+  color: var(--vp-text-faint, rgba(255, 255, 255, 0.36));
+}
+
+.vp-measure__list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vp-measure__item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "main btns" "meta btns";
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--vp-panel, rgba(255, 255, 255, 0.045));
+  border: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
+}
+.vp-measure__main {
+  grid-area: main;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.vp-measure__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 4px;
+  color: var(--vp-text, rgba(255, 255, 255, 0.92));
+  font-family: var(--vp-font, system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+.vp-measure__label::placeholder {
+  color: var(--vp-text-faint, rgba(255, 255, 255, 0.36));
+  font-weight: 500;
+}
+.vp-measure__label:hover { border-color: var(--vp-border, rgba(255, 255, 255, 0.09)); }
+.vp-measure__label:focus {
+  border-color: var(--vp-accent, #6ea8fe);
+  background: rgba(255, 255, 255, 0.05);
+}
+.vp-measure__value {
+  flex: 0 0 auto;
+  font-family: var(--vp-mono, monospace);
+  font-size: 12px;
+  color: #22d3ee; /* matches the annotation color on the images */
+  white-space: nowrap;
+}
+.vp-measure__meta {
+  grid-area: meta;
+  font-family: var(--vp-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vp-text-faint, rgba(255, 255, 255, 0.36));
+  text-align: left;
+  padding-left: 4px;
+}
+.vp-measure__btns {
+  grid-area: btns;
+  display: flex;
+  gap: 4px;
+}
+.vp-measure__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0; /* global button padding would swallow the icon */
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--vp-border, rgba(255, 255, 255, 0.09));
+  color: var(--vp-text-dim, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+}
+.vp-measure__btn:hover {
+  color: var(--vp-text, rgba(255, 255, 255, 0.92));
+  background: rgba(255, 255, 255, 0.12);
+}
+.vp-measure__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vp-measure__btn--danger:hover {
+  color: #fda4af;
+  border-color: rgba(244, 63, 94, 0.4);
+}

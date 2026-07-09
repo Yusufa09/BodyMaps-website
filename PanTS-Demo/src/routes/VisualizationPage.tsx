@@ -3,17 +3,20 @@ import type { Color, ColorLUT } from "@cornerstonejs/core/types";
 import type { vtkVolumeProperty } from '@kitware/vtk.js/Rendering/Core/VolumeProperty';
 import { Niivue } from "@niivue/niivue";
 import {
+    IconAngle,
+    IconCamera,
     IconChartBar,
     IconCheck,
+    IconCircle,
     IconClick,
-    IconDownload, IconHome, IconPointer, IconReport,
+    IconDownload, IconHome, IconListDetails, IconMicrophone, IconPointer, IconReport,
     IconRuler2,
     IconSettings,
     IconShare,
     IconSquareDashed,
     IconTrash
 } from "@tabler/icons-react";
-import React, { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -33,8 +36,12 @@ import {
     segmentation_category_colors,
 } from "../helpers/constants";
 import {
+    ANGLE_TOOL,
+    captureViewportImages,
     clearMeasurements,
+    ELLIPSE_TOOL,
     getCrosshairMm,
+    getMeasurementSummaries,
     getOrganCentroids,
     getOrganLabelOnClick,
     LENGTH_TOOL,
@@ -46,10 +53,20 @@ import {
     setToolGroupOpacity,
     setVisibilities,
     subscribeToCrosshairChanges,
+    subscribeToMeasurementChanges,
     subscribeToVolumeProgress,
     toggleCrosshairTool,
     type MeasurementToolName
 } from "../helpers/CornerstoneNifti2";
+import MeasurementPanel from "../components/MeasurementPanel/MeasurementPanel";
+import SessionHUD from "../components/ReadingSession/SessionHUD";
+import SessionSummary from "../components/ReadingSession/SessionSummary";
+import {
+    composeImagesSideBySide,
+    ReadingSession,
+    type SessionResult,
+} from "../helpers/readingSession";
+import { toolDisplayName, type ReportMeasurement } from "../helpers/sessionReport";
 import PercentileBar from "../components/PercentileBar";
 import {
 	describeBasis,
@@ -84,10 +101,13 @@ const CT_PRESETS = [
 
 // Measurement tools shown inside the collapsible "Measure" flyout, so the toolbar isn't
 // crowded with one button per tool (matches the split-button pattern OHIF uses).
-const MEASURE_TOOLS: { name: MeasurementToolName; label: string; Icon: typeof IconRuler2 }[] = [
-	{ name: LENGTH_TOOL, label: "Distance (mm)", Icon: IconRuler2 },
-	{ name: PROBE_TOOL, label: "HU at point", Icon: IconClick },
-	{ name: ROI_TOOL, label: "ROI · HU & area", Icon: IconSquareDashed },
+// `key` is the keyboard shortcut (also shown in the flyout).
+const MEASURE_TOOLS: { name: MeasurementToolName; label: string; Icon: typeof IconRuler2; key: string }[] = [
+	{ name: LENGTH_TOOL, label: "Distance (mm)", Icon: IconRuler2, key: "L" },
+	{ name: ANGLE_TOOL, label: "Angle (°)", Icon: IconAngle, key: "A" },
+	{ name: PROBE_TOOL, label: "HU at point", Icon: IconClick, key: "P" },
+	{ name: ROI_TOOL, label: "Rect ROI · HU & area", Icon: IconSquareDashed, key: "R" },
+	{ name: ELLIPSE_TOOL, label: "Ellipse ROI · HU & area", Icon: IconCircle, key: "E" },
 ];
 
 function VisualizationPage() {
@@ -221,6 +241,14 @@ function VisualizationPage() {
 			return next;
 		});
 	};
+	// Reading session (voice-assisted case review). The ref mirrors the state so event
+	// handlers and Cornerstone subscriptions can log without re-subscribing on start/stop.
+	const sessionRef = useRef<ReadingSession | null>(null);
+	const [readingSession, setReadingSession] = useState<ReadingSession | null>(null);
+	const [sessionStarting, setSessionStarting] = useState(false);
+	const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
+	const [sessionMeasurements, setSessionMeasurements] = useState<ReportMeasurement[]>([]);
+	const [showMeasurePanel, setShowMeasurePanel] = useState(false);
 	// Shareable-link state: brief "copied" confirmation, and a guard so a deep-link's view
 	// state is applied exactly once after the volume finishes loading.
 	const [shareCopied, setShareCopied] = useState(false);
@@ -284,10 +312,148 @@ function VisualizationPage() {
 				mm[1],
 				mm[2],
 			]);
+			// Coalesced: a scroll through 40 slices reads as one "navigated to…" line.
+			sessionRef.current?.log(
+				"navigate",
+				`Navigated to (${mm.slice(0, 3).map((v) => v.toFixed(0)).join(", ")}) mm`,
+				1500
+			);
 		});
 
 		return unsubscribe;
 	}, [])
+
+	// ---- Reading session: capture, key images, lifecycle ------------------------------
+
+	// Capture the visible panes (with annotations). During a session the shot joins the
+	// session's key images; outside one it downloads as a single side-by-side PNG.
+	const takeSnapshot = useCallback(async (label?: string) => {
+		const images = await captureViewportImages();
+		if (!images.length) return;
+		const session = sessionRef.current;
+		if (session) {
+			session.addShot(label ?? "Key image", images);
+			session.log("screenshot", label ?? `Key image (${images.map((im) => im.name).join(", ")})`);
+		} else {
+			const composite = await composeImagesSideBySide(images);
+			if (!composite) return;
+			const link = document.createElement("a");
+			link.href = composite;
+			link.download = `case${caseId}_snapshot.png`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		}
+	}, [caseId]);
+
+	const startReadingSession = async () => {
+		if (sessionRef.current || sessionStarting) return;
+		setSessionStarting(true);
+		try {
+			const session = await ReadingSession.start(String(caseId));
+			sessionRef.current = session;
+			setReadingSession(session);
+			session.log(
+				"session",
+				session.micGranted
+					? "Reading session started — narration recording"
+					: "Reading session started — no microphone, events only"
+			);
+		} finally {
+			setSessionStarting(false);
+		}
+	};
+
+	const stopReadingSession = async () => {
+		const session = sessionRef.current;
+		if (!session) return;
+		sessionRef.current = null;
+		setReadingSession(null);
+		// Snapshot the measurement inventory at stop time — it feeds the draft report.
+		const measurements = getMeasurementSummaries().map((m) => ({
+			tool: m.tool,
+			label: m.label,
+			value: m.value,
+		}));
+		const result = await session.stop();
+		setSessionMeasurements(measurements);
+		setSessionResult(result);
+	};
+
+	// If the user navigates away mid-session, release the microphone.
+	useEffect(() => {
+		return () => {
+			void sessionRef.current?.stop();
+			sessionRef.current = null;
+		};
+	}, []);
+
+	// Completed measurements land in the session timeline and auto-capture a key image
+	// (on the next frame, after the annotation has painted onto the SVG overlay).
+	useEffect(() => {
+		const unsubscribe = subscribeToMeasurementChanges((kind, m) => {
+			if (!sessionRef.current) return;
+			if (kind === "completed") {
+				sessionRef.current.log("measure", `${toolDisplayName(m.tool)} measured: ${m.value}`);
+				requestAnimationFrame(() => {
+					void takeSnapshot(`${toolDisplayName(m.tool)} — ${m.value}`);
+				});
+			} else if (kind === "removed") {
+				sessionRef.current.log("measure", `Removed a ${toolDisplayName(m.tool)} measurement`);
+			}
+		});
+		return unsubscribe;
+	}, [takeSnapshot]);
+
+	// Keyboard shortcuts (skipped while typing): L/A/P/R/E measurement tools,
+	// C crosshair, S snapshot, M measurements panel.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			const target = e.target as HTMLElement | null;
+			if (
+				target &&
+				(target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+			)
+				return;
+			const toolByKey: Record<string, MeasurementToolName> = {
+				l: LENGTH_TOOL,
+				a: ANGLE_TOOL,
+				p: PROBE_TOOL,
+				r: ROI_TOOL,
+				e: ELLIPSE_TOOL,
+			};
+			const key = e.key.toLowerCase();
+			if (toolByKey[key]) {
+				setActiveMeasureTool((prev) => (prev === toolByKey[key] ? null : toolByKey[key]));
+			} else if (key === "c") {
+				setActiveMeasureTool(null);
+				setCrosshairToolActive(true);
+			} else if (key === "s") {
+				void takeSnapshot();
+			} else if (key === "m") {
+				setShowStats(false);
+				setShowMeasurePanel((v) => !v);
+			} else {
+				return;
+			}
+			e.preventDefault();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [takeSnapshot]);
+
+	// View-mode changes belong in the reading timeline (skip the initial mount).
+	const loggedViewMode = useRef<ViewMode | null>(null);
+	useEffect(() => {
+		if (loggedViewMode.current !== null && loggedViewMode.current !== viewMode) {
+			sessionRef.current?.log(
+				"view",
+				`Switched to ${viewMode === "mpr" ? "MPR" : viewMode === "3d" ? "3D" : viewMode} view`
+			);
+		}
+		loggedViewMode.current = viewMode;
+	}, [viewMode]);
 
 	// Track the CT download to show an accurate ETA while the case loads. We follow the
 	// largest-total stream (the CT volume, not the smaller segmentation) and derive the
@@ -451,6 +617,8 @@ function VisualizationPage() {
 
 		setWindowWidth(_width);
 		setWindowCenter(_center);
+		// Coalesced: a slider drag logs as one final "W/L" line, not dozens.
+		sessionRef.current?.log("window", `Window/level set to W ${_width} / L ${_center}`, 1200);
 
 		if (!renderingEngine || !viewportIds.length || !volumeId) return;
 
@@ -548,6 +716,10 @@ function VisualizationPage() {
 		if (!centroid) return; // organ not present in this scan
 		moveCornerstoneCrosshairToMm(centroid);
 		setCrosshairMm(centroid);
+		sessionRef.current?.log(
+			"organ",
+			`Jumped to ${checkBoxData.find((o) => o.id === label)?.label ?? `organ ${label}`}`
+		);
 		// if (NV) moveNiiVueCrosshairToMm(NV, centroid);
 		setCheckState((prev) => {
 			if (prev[label]) return prev;
@@ -590,6 +762,7 @@ function VisualizationPage() {
 	const handlePresetClick = (preset: typeof CT_PRESETS[number]) => {
 		setActivePreset(preset.name);
 		handleWindowChange(preset.width, preset.center);
+		sessionRef.current?.log("preset", `Applied ${preset.name} window`);
 	};
 
 	const panelStyle = (panel: "axial" | "sagittal" | "coronal" | "3d"): React.CSSProperties => {
@@ -634,12 +807,14 @@ function VisualizationPage() {
 		const value = Number(event.target.value);
 		setOpacityValue(value);
 		setToolGroupOpacity(value / 100);
+		sessionRef.current?.log("opacity", `Mask opacity set to ${value}%`, 1200);
 		// updateGeneralOpacity(render_ref, value / 100);
 	};
 
 	const handleOpacityOnFormSubmit = (value: number) => {
 		setOpacityValue(value);
 		setToolGroupOpacity(value / 100);
+		sessionRef.current?.log("opacity", `Mask opacity set to ${value}%`, 1200);
 		// updateGeneralOpacity(render_ref, value / 100);
 	};
 
@@ -705,6 +880,7 @@ function VisualizationPage() {
 	};
 
 	const handleToggleStats = () => {
+		setShowMeasurePanel(false); // the two panels share the right-side slot
 		setShowStats((v) => !v);
 		loadOrganStats();
 		loadPercentileContext();
@@ -930,7 +1106,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 															ref={measureMenuRef}
 															style={{ position: "fixed", top: measureMenuPos.top, left: measureMenuPos.left }}
 														>
-															{MEASURE_TOOLS.map(({ name, label, Icon }) => (
+															{MEASURE_TOOLS.map(({ name, label, Icon, key: hotkey }) => (
 																<button
 																	key={name}
 																	className={`vp-flyout__item ${activeMeasureTool === name ? "is-active" : ""}`}
@@ -942,6 +1118,7 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 																>
 																	<Icon size={18} />
 																	<span>{label}</span>
+																	<span className="vp-flyout__kbd">{hotkey}</span>
 																</button>
 															))}
 															<button
@@ -959,6 +1136,43 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 														document.body
 													)}
 											</div>
+											<button
+												className={`vp-tool ${showMeasurePanel ? "vp-tool--active" : ""}`}
+												onClick={() => {
+													setShowStats(false);
+													setShowMeasurePanel((v) => !v);
+												}}
+												aria-label="Measurements list"
+											>
+												<IconListDetails size={20} color={showMeasurePanel ? "#08090b" : "white"} />
+												<span className="vp-tool__tip">Measurements (M)</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={() => { void takeSnapshot(); }}
+												aria-label="Capture snapshot"
+											>
+												<IconCamera size={20} color="white" />
+												<span className="vp-tool__tip">Snapshot (S)</span>
+											</button>
+											<button
+												className={`vp-tool ${readingSession ? "vp-tool--rec" : ""}`}
+												onClick={() => {
+													if (readingSession) void stopReadingSession();
+													else void startReadingSession();
+												}}
+												disabled={sessionStarting}
+												aria-label={readingSession ? "Stop reading session" : "Start reading session"}
+											>
+												<IconMicrophone size={20} color={readingSession ? "#fecdd3" : "white"} />
+												<span className="vp-tool__tip">
+													{readingSession
+														? "Stop reading session"
+														: sessionStarting
+															? "Starting…"
+															: "Record reading session"}
+												</span>
+											</button>
 											<button
 												className={`vp-tool ${shareCopied ? "vp-tool--active" : ""}`}
 												onClick={handleShare}
@@ -1252,6 +1466,29 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 						<div className="vp-stats__msg">No organ data available.</div>
 					)}
 				</div>
+			)}
+
+			{showMeasurePanel && (
+				<MeasurementPanel
+					onClose={() => setShowMeasurePanel(false)}
+					onJump={(mm) => setCrosshairMm(mm)}
+				/>
+			)}
+
+			{readingSession && (
+				<SessionHUD
+					session={readingSession}
+					onSnapshot={() => { void takeSnapshot(); }}
+					onStop={() => { void stopReadingSession(); }}
+				/>
+			)}
+
+			{sessionResult && (
+				<SessionSummary
+					result={sessionResult}
+					measurements={sessionMeasurements}
+					onDiscard={() => setSessionResult(null)}
+				/>
 			)}
 
 			{

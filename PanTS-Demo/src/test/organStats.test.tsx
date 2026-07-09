@@ -38,9 +38,17 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	centerOnCursor: vi.fn(),
 	setZoom: vi.fn(),
 	zoomToFit: vi.fn(),
+	getMeasurementSummaries: vi.fn(() => []),
+	subscribeToMeasurementChanges: vi.fn(() => () => {}),
+	captureViewportImages: vi.fn(async () => []),
+	renameMeasurement: vi.fn(),
+	removeMeasurement: vi.fn(),
+	jumpToMeasurement: vi.fn(() => null),
 	LENGTH_TOOL: "Length",
 	PROBE_TOOL: "Probe",
 	ROI_TOOL: "RectangleROI",
+	ANGLE_TOOL: "Angle",
+	ELLIPSE_TOOL: "EllipticalROI",
 }));
 
 vi.mock("../helpers/NiiVueNifti", () => ({

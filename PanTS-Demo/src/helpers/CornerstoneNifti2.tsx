@@ -19,14 +19,19 @@ const {
     LengthTool,
     ProbeTool,
     RectangleROITool,
+    AngleTool,
+    EllipticalROITool,
 } = cornerstoneTools;
 
 // Measurement tools the toolbar can switch the primary mouse button to. Length =
-// distance in mm, Probe = HU readout at a point, RectangleROI = area + mean/max/min HU.
+// distance in mm, Probe = HU readout at a point, RectangleROI/EllipticalROI =
+// area + mean/max/min HU, Angle = angle in degrees between two segments.
 export const LENGTH_TOOL = LengthTool.toolName;
 export const PROBE_TOOL = ProbeTool.toolName;
 export const ROI_TOOL = RectangleROITool.toolName;
-export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, PROBE_TOOL, ROI_TOOL] as const;
+export const ANGLE_TOOL = AngleTool.toolName;
+export const ELLIPSE_TOOL = EllipticalROITool.toolName;
+export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL] as const;
 export type MeasurementToolName = (typeof MEASUREMENT_TOOL_NAMES)[number];
 
 // Cornerstone's defaults draw measurements in yellow (resting) / green (selected) — the
@@ -215,12 +220,16 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(LengthTool);
     cornerstoneTools.addTool(ProbeTool);
     cornerstoneTools.addTool(RectangleROITool);
+    cornerstoneTools.addTool(AngleTool);
+    cornerstoneTools.addTool(EllipticalROITool);
     toolGroup.addTool(PanTool.toolName);
     toolGroup.addTool(ZoomTool.toolName);
     toolGroup.addTool(StackScrollTool.toolName);
     toolGroup.addTool(LengthTool.toolName);
     toolGroup.addTool(ProbeTool.toolName);
     toolGroup.addTool(RectangleROITool.toolName);
+    toolGroup.addTool(AngleTool.toolName);
+    toolGroup.addTool(EllipticalROITool.toolName);
     // Merge our color overrides onto the existing defaults — replacing wholesale would
     // drop font/background/shadow defaults and the value labels would stop rendering.
     const defaultStyles = annotation.config.style.getDefaultToolStyles();
@@ -446,6 +455,179 @@ export function clearMeasurements() {
   }
   currentRenderingEngine?.render();
 }
+
+// ---------------------------------------------------------------------------
+// Measurement inventory — a UI-friendly view over Cornerstone's annotation
+// state, powering the Measurements panel and the reading-session report.
+// ---------------------------------------------------------------------------
+
+export type MeasurementSummary = {
+  uid: string;
+  tool: string;
+  /** User-assigned name (e.g. "lesion"); empty until renamed. */
+  label: string;
+  /** Formatted value, e.g. "42.3 mm", "37.5°", "512 mm² · mean 45 HU". */
+  value: string;
+  /** World-mm center of the annotation's handles (jump target), if known. */
+  center: [number, number, number] | null;
+};
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- annotation payloads are untyped */
+function formatNum(n: number, digits = 1): string {
+  return Number.isFinite(n) ? n.toFixed(digits) : "?";
+}
+
+// Each tool caches different stats keys; scan for the ones we know how to show.
+function formatAnnotationValue(a: any): string {
+  const statsByTarget = a?.data?.cachedStats ?? {};
+  for (const stats of Object.values(statsByTarget) as any[]) {
+    if (!stats || typeof stats !== "object") continue;
+    if (typeof stats.length === "number") return `${formatNum(stats.length)} ${stats.unit ?? "mm"}`;
+    if (typeof stats.angle === "number") return `${formatNum(stats.angle)}°`;
+    if (typeof stats.area === "number") {
+      const area = `${formatNum(stats.area, 0)} ${stats.areaUnit ?? "mm²"}`;
+      return typeof stats.mean === "number" ? `${area} · mean ${formatNum(stats.mean, 0)} HU` : area;
+    }
+    if (typeof stats.value === "number") return `${formatNum(stats.value, 0)} HU`;
+    if (typeof stats.mean === "number") return `mean ${formatNum(stats.mean, 0)} HU`;
+  }
+  return "…";
+}
+
+function annotationCenter(a: any): [number, number, number] | null {
+  const pts = a?.data?.handles?.points as number[][] | undefined;
+  if (!pts?.length) return null;
+  const c: [number, number, number] = [0, 0, 0];
+  for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+  return [c[0] / pts.length, c[1] / pts.length, c[2] / pts.length];
+}
+
+function toSummary(a: any): MeasurementSummary {
+  return {
+    uid: String(a.annotationUID),
+    tool: String(a?.metadata?.toolName ?? ""),
+    label: String(a?.data?.label ?? ""),
+    value: formatAnnotationValue(a),
+    center: annotationCenter(a),
+  };
+}
+
+export function getMeasurementSummaries(): MeasurementSummary[] {
+  try {
+    const all = annotation.state.getAllAnnotations() ?? [];
+    const names = MEASUREMENT_TOOL_NAMES as readonly string[];
+    return (all as any[])
+      .filter((a) => a?.annotationUID && names.includes(a?.metadata?.toolName))
+      .map(toSummary);
+  } catch {
+    return [];
+  }
+}
+
+export function renameMeasurement(uid: string, label: string) {
+  const a = annotation.state.getAnnotation(uid) as any;
+  if (!a?.data) return;
+  a.data.label = label;
+  currentRenderingEngine?.render();
+}
+
+export function removeMeasurement(uid: string) {
+  try { annotation.state.removeAnnotation(uid); } catch { /* already gone */ }
+  currentRenderingEngine?.render();
+}
+
+// Moves the crosshair to the annotation and returns the target (so the caller
+// can also sync its own crosshair state / the 3D view).
+export function jumpToMeasurement(uid: string): [number, number, number] | null {
+  const a = annotation.state.getAnnotation(uid) as any;
+  const c = annotationCenter(a);
+  if (!c) return null;
+  moveCornerstoneCrosshairToMm(c);
+  currentRenderingEngine?.render();
+  return c;
+}
+
+export type MeasurementChangeKind = "completed" | "modified" | "removed";
+
+// Fires for measurement annotations only (crosshair events are filtered out).
+export function subscribeToMeasurementChanges(
+  cb: (kind: MeasurementChangeKind, summary: MeasurementSummary) => void
+): () => void {
+  const names = MEASUREMENT_TOOL_NAMES as readonly string[];
+  const make = (kind: MeasurementChangeKind) => (evt: Event) => {
+    const a = (evt as CustomEvent).detail?.annotation;
+    if (!a?.annotationUID || !names.includes(a?.metadata?.toolName)) return;
+    cb(kind, toSummary(a));
+  };
+  const pairs: [string, EventListener][] = [
+    [cornerstoneTools.Enums.Events.ANNOTATION_COMPLETED, make("completed") as EventListener],
+    [cornerstoneTools.Enums.Events.ANNOTATION_MODIFIED, make("modified") as EventListener],
+    [cornerstoneTools.Enums.Events.ANNOTATION_REMOVED, make("removed") as EventListener],
+  ];
+  for (const [name, handler] of pairs) eventTarget.addEventListener(name, handler);
+  return () => {
+    for (const [name, handler] of pairs) eventTarget.removeEventListener(name, handler);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Viewport screenshots — used by the reading session (auto key images) and the
+// toolbar snapshot button. Annotations/reference lines live on an SVG overlay,
+// not the WebGL-backed canvas, so each shot composites canvas + rasterized SVG.
+// ---------------------------------------------------------------------------
+
+export type ViewportImage = { name: string; dataUrl: string };
+
+export async function captureViewportImages(): Promise<ViewportImage[]> {
+  const engine = getRenderingEngine(renderingEngineId);
+  if (!engine) return [];
+  const names: Record<string, string> = {
+    [viewportId1]: "axial",
+    [viewportId2]: "sagittal",
+    [viewportId3]: "coronal",
+  };
+  const out: ViewportImage[] = [];
+  for (const viewportId of [viewportId1, viewportId2, viewportId3]) {
+    try {
+      const viewport = engine.getViewport(viewportId) as any;
+      const canvas: HTMLCanvasElement | undefined = viewport?.canvas;
+      const element: HTMLElement | undefined = viewport?.element;
+      // offsetParent is null for display:none panes (single-view modes) — skip them.
+      if (!canvas || !canvas.width || !element || element.offsetParent === null) continue;
+      const composite = document.createElement("canvas");
+      composite.width = canvas.width;
+      composite.height = canvas.height;
+      const ctx = composite.getContext("2d");
+      if (!ctx) continue;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, composite.width, composite.height);
+      ctx.drawImage(canvas, 0, 0);
+      const svg = element.querySelector("svg");
+      if (svg) {
+        const clone = svg.cloneNode(true) as SVGElement;
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        // The overlay is sized in CSS pixels; give the clone explicit dimensions so
+        // the rasterizer knows them, then scale to the canvas's device pixels.
+        clone.setAttribute("width", String(canvas.clientWidth || canvas.width));
+        clone.setAttribute("height", String(canvas.clientHeight || canvas.height));
+        const img = new Image();
+        await new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // shot is still useful without the overlay
+          img.src =
+            "data:image/svg+xml;charset=utf-8," +
+            encodeURIComponent(new XMLSerializer().serializeToString(clone));
+        });
+        if (img.width) ctx.drawImage(img, 0, 0, composite.width, composite.height);
+      }
+      out.push({ name: names[viewportId], dataUrl: composite.toDataURL("image/png") });
+    } catch {
+      /* viewport not ready — skip this pane */
+    }
+  }
+  return out;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function setZoom(zoomValue: number){
   const engine = getRenderingEngine(renderingEngineId);
