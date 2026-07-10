@@ -33,12 +33,11 @@ import {
     IconTrash,
     IconZoomIn
 } from "@tabler/icons-react";
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useParams } from "react-router-dom";
 import AISidebar from "../components/AIAssistant/AISidebar";
 import { buildViewerActions } from "../components/AIAssistant/assistantActions";
-import ErrorBoundary from "../components/ErrorBoundary";
 import MaskEditPanel, { type MaskEditMode } from "../components/MaskEditPanel/MaskEditPanel";
 import MeasurementPanel from "../components/MeasurementPanel/MeasurementPanel";
 import { SegmentationMeshViewer } from "../components/MeshViewer";
@@ -47,7 +46,6 @@ import PercentileBar from "../components/PercentileBar";
 import SessionHUD from "../components/ReadingSession/SessionHUD";
 import SessionSummary from "../components/ReadingSession/SessionSummary";
 import ReportScreen from "../components/ReportScreen/ReportScreen";
-import SnakeGame from "../components/SnakeGame/SnakeGame";
 import {
     API_BASE,
     APP_CONSTANTS,
@@ -215,10 +213,6 @@ const fmtStat = (v: number | null, digits = 0): string => (v === null ? "—" : 
 const colorToCss = (c: Color | undefined): string =>
 	c ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${(c[3] ?? 255) / 255})` : "rgba(255, 255, 255, 0.4)";
 
-// 3D organ loading animation (three.js) — lazy so its chunk loads alongside the
-// volume download rather than bloating the main viewer bundle.
-const RotatingModelLoader = lazy(() => import("../components/Loading"));
-
 const CT_PRESETS = [
 	{ name: "Soft Tissue", width: 400, center: 40 },
 	{ name: "Bone", width: 1800, center: 400 },
@@ -383,8 +377,11 @@ function VisualizationPage() {
 		sagittal: null,
 		coronal: null,
 	});
+	// Matches the "Soft Tissue" CT_PRESETS entry (W 400 / L 40) — activePreset below
+	// defaults to that same preset, so the readout and the pre-highlighted button
+	// should agree on first load instead of showing a level the preset never set.
 	const [windowWidth, setWindowWidth] = useState(400);
-	const [windowCenter, setWindowCenter] = useState(50);
+	const [windowCenter, setWindowCenter] = useState(40);
 	// Brief W/L readout: shown only while the user is actively dragging the brightness/
 	// contrast sliders or picking a preset — not on the initial/deep-link window apply, and
 	// not left on screen indefinitely. windowReadoutTimerRef holds the fade-out timeout so
@@ -2328,67 +2325,29 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 			{/* Stage — fills the space below the toolbar; the viewports live here. */}
 			<div className="vp-stage" ref={stageRef}>
 
-				{/* {
-          loading ?
-          <div className="flex z-3 absolute top-0 left-0 w-screen h-screen items-center justify-center">
-              <div role="status">
-                  <svg aria-hidden="true" className="w-8 h-8 text-gray-200 animate-spin dark:text-gray-600 fill-white" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor"/><path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill"/></svg>
-                  <span className="sr-only">Loading...</span>
-              </div>
-          </div>
-          :
-          null
-        } */}
 				{loading ? (
-					<>
-						{pantsCase && (
-							<div className="vp-loadinfo">
-								<div className="w-fit">
-									<SnakeGame />
+					<div className="vp-loading">
+						<div className="vp-spinner" />
+						<div className="vp-loading__text">Preparing case {caseId}…</div>
+						{pantsCase && (dlDone || dlPct != null) && (
+							<div className="vp-progress">
+								<div className="vp-progress__head">
+									<span className="vp-progress__label">
+										{dlDone ? "Finalizing…" : "Loading scan"}
+									</span>
+									{!dlDone && dlPct != null && (
+										<span className="vp-progress__pct">{dlPct}%</span>
+									)}
 								</div>
-								{(dlDone || dlPct != null) && (
-									<div className="vp-progress">
-										<div className="vp-progress__head">
-											<span className="vp-progress__label">
-												{dlDone ? "Finalizing…" : "Loading scan"}
-											</span>
-											{!dlDone && dlPct != null && (
-												<span className="vp-progress__pct">{dlPct}%</span>
-											)}
-										</div>
-										<div className="vp-progress__track">
-											<div
-												className={`vp-progress__fill ${dlDone ? "is-finalizing" : ""}`}
-												style={dlDone ? undefined : { width: `${dlPct ?? 0}%` }}
-											/>
-										</div>
-									</div>
-								)}
+								<div className="vp-progress__track">
+									<div
+										className={`vp-progress__fill ${dlDone ? "is-finalizing" : ""}`}
+										style={dlDone ? undefined : { width: `${dlPct ?? 0}%` }}
+									/>
+								</div>
 							</div>
 						)}
-						{/* 3D organ loader; falls back to a lightweight spinner if it can't
-						    render (lazy chunk error / WebGL context unavailable). */}
-						<ErrorBoundary
-							fallback={
-								<div className="vp-loading">
-									<div className="flex flex-col items-center gap-4">
-										<div className="vp-spinner" />
-										<div className="vp-loading__text">Preparing case {caseId}…</div>
-									</div>
-								</div>
-							}
-						>
-							<Suspense
-								fallback={
-									<div className="vp-loading">
-										<div className="vp-spinner" />
-									</div>
-								}
-							>
-								<RotatingModelLoader />
-							</Suspense>
-						</ErrorBoundary>
-					</>
+					</div>
 				) : null}
 				<div
 					className="visualization-container"

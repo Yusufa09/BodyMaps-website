@@ -92,11 +92,6 @@ vi.mock("../helpers/NiiVueNifti", () => ({
 	updateVisibilities: vi.fn(),
 }));
 
-vi.mock("../components/Loading", async () => {
-	const React = await import("react");
-	return { default: () => React.createElement("div", { "data-testid": "viewer-loader" }) };
-});
-
 import VisualizationPage from "../routes/VisualizationPage";
 import { __resetOrganNormsCache } from "../helpers/organNorms";
 

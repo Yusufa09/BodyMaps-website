@@ -87,11 +87,6 @@
   overflow: hidden;
 }
 
-/* Wraps each MPR pane so slice/window overlays can sit as DOM siblings of the
-   Cornerstone-owned pane div, never as its children (Cornerstone manages that div's
-   contents imperatively; mixing React children into the same node risks the two
-   fighting over the same nodes). The wrapper is now the grid item — sized by the grid
-   itself, same as the bare pane div was before — so the pane div just fills it. */
 .vp-pane-wrap {
   position: relative;
 }
@@ -142,19 +137,6 @@
   background-color: #333;
 }
 
-/* ============================================================
-   Refined dark viewer design system
-   One cohesive language for the overlay panels, controls and
-   viewports. Tokens first, then components.
-
-   Defined on :root (not .VisualizationPage) so they also reach the toolbar's
-   flyout menus: those render via createPortal into document.body, which in
-   the real DOM sits OUTSIDE .VisualizationPage (only React's virtual tree
-   nests them there) — so a class-scoped custom property is invisible to
-   them and every var(--vp-*) inside a flyout would silently fall back to
-   nothing (e.g. the wrong system font instead of Space Grotesk). :root is
-   the one ancestor guaranteed to contain both.
-   ============================================================ */
 :root {
   --vp-bg: #08090b;
   --vp-panel: rgba(255, 255, 255, 0.045);
@@ -961,16 +943,8 @@
   color: var(--vp-text-dim, rgba(255, 255, 255, 0.5));
 }
 
-/* Loading screen: snake + measured ETA, kept above the 3D organ loader overlay. */
-.vp-loadinfo {
-  position: relative;
-  z-index: 99;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  padding-top: 24px;
-}
+/* Measured-ETA progress bar shown under the loading spinner while a case's volume
+   downloads. */
 .vp-progress {
   width: 280px;
   max-width: 70vw;
