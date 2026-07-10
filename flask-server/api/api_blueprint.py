@@ -446,6 +446,9 @@ def define_term():
  
 @api_blueprint.route('/get-report-data/<id>', methods=['GET'])
 def get_report_data(id):
+    if id is None or not str(id).isdigit():
+        return jsonify({"error": "Invalid id parameter"}), 400
+    case_id = int(id)
     try:
         if id is None or not str(id).isdigit():
             return jsonify({"error": "Invalid id parameter"}), 400
@@ -490,19 +493,19 @@ def get_report_data(id):
         except Exception as e:
             print(f"[RadGPT] metadata lookup failed: {e}")
         # ─────────────────────────────────────────────────────────────────────
-        subfolder = "ImageTr" if int(id) < 9000 else "ImageTe"
-        label_subfolder = "LabelTr" if int(id) < 9000 else "LabelTe"
+        subfolder = "ImageTr" if case_id < 9000 else "ImageTe"
+        label_subfolder = "LabelTr" if case_id < 9000 else "LabelTe"
         # Check image_only first (new structure), fall back to data/ImageTr
-        image_only_path = f"{Constants.PANTS_PATH}/image_only/{get_panTS_id(id)}/{Constants.MAIN_NIFTI_FILENAME}"
-        data_ct_path = f"{Constants.PANTS_PATH}/data/{subfolder}/{get_panTS_id(id)}/{Constants.MAIN_NIFTI_FILENAME}"
+        image_only_path = f"{Constants.PANTS_PATH}/image_only/{get_panTS_id(case_id)}/{Constants.MAIN_NIFTI_FILENAME}"
+        data_ct_path = f"{Constants.PANTS_PATH}/data/{subfolder}/{get_panTS_id(case_id)}/{Constants.MAIN_NIFTI_FILENAME}"
         ct_path = image_only_path if os.path.exists(image_only_path) else data_ct_path
         # Check mask_only first (new structure), fall back to data/LabelTe
-        mask_only_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
-        data_mask_path = f"{Constants.PANTS_PATH}/data/{label_subfolder}/{get_panTS_id(id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
+        mask_only_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(case_id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
+        data_mask_path = f"{Constants.PANTS_PATH}/data/{label_subfolder}/{get_panTS_id(case_id)}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
         mask_path = mask_only_path if os.path.exists(mask_only_path) else data_mask_path
-        seg_dir = f"{Constants.PANTS_PATH}/data/{label_subfolder}/{get_panTS_id(id)}/segmentations"
+        seg_dir = f"{Constants.PANTS_PATH}/data/{label_subfolder}/{get_panTS_id(case_id)}/segmentations"
  
-        pid = get_panTS_id(id)
+        pid = get_panTS_id(case_id)
         meta = _METADATA_CACHE.get(pid, {})
         age = meta.get("age", "N/A")
         sex = meta.get("sex", "N/A")
