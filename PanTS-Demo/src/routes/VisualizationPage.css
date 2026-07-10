@@ -36,11 +36,7 @@
   background-color: grey;
 }
 
-/* Body row under the toolbar: left dock (Organs) · stage · right docks (stats /
-   measurements / mask edit / AI). Docked panels are in NORMAL FLOW — they push the
-   stage narrower instead of overlaying the viewports, the same way the toolbar
-   above pushes them down. The stage's ResizeObserver refits the canvases whenever
-   a dock opens or closes. */
+
 .vp-body {
   flex: 1 1 auto;
   display: flex;
@@ -49,8 +45,6 @@
   overflow: hidden;
 }
 
-/* The stage holds the viewports and fills whatever width/height is left beside
-   the docks (it flexes). position:relative anchors the absolutely-filled container. */
 .vp-stage {
   flex: 1 1 auto;
   position: relative;
@@ -628,6 +622,7 @@
   position: relative;
   display: flex;
 }
+
 /* little caret in the corner to signal the button opens a menu */
 .vp-tool__caret {
   position: absolute;
@@ -652,6 +647,50 @@
   border: 1px solid var(--vp-border);
   border-radius: 12px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+/* Cine: a single toolbar button opens this popup holding the actual Play/Pause button
+   and the FPS slider (side by side, not stacked) — nothing extra sits in the main
+   toolbar itself. Declared after the base .vp-flyout rule so this row layout actually
+   wins the cascade over its column default. */
+.vp-flyout--cine {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.vp-flyout--cine .vp-tb-slider {
+  gap: 10px;
+  cursor: default;
+}
+.vp-flyout--cine .vp-range {
+  width: 120px;
+}
+/* Brighter than the default dim toolbar-slider labels — this popup sits on its own,
+   away from the icon row, so FPS should read clearly rather than blend in.
+   Fallback values are required here (not just nice-to-have): the popup is rendered
+   via createPortal into document.body, outside .VisualizationPage where --vp-* are
+   defined, so an unresolved var() with no fallback computes to nothing. */
+.vp-flyout--cine .vp-tb-slider__label {
+  color: var(--vp-accent, #6ea8fe);
+  font-size: 10px;
+}
+.vp-flyout--cine .vp-tb-slider__val {
+  min-width: 26px;
+  color: var(--vp-text, rgba(255, 255, 255, 0.92));
+  font-size: 12px;
+  font-weight: 600;
+}
+/* The popup's own Play/Pause button reuses .vp-tool, whose colors are also unscoped
+   --vp-* vars — same portal issue as above, same fix. */
+.vp-flyout--cine .vp-tool--cine-play {
+  background: var(--vp-panel, rgba(255, 255, 255, 0.045));
+  border-color: var(--vp-border, rgba(255, 255, 255, 0.09));
+  color: var(--vp-text, rgba(255, 255, 255, 0.92));
+}
+.vp-flyout--cine .vp-tool--cine-play:hover {
+  background: var(--vp-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--vp-border-strong, rgba(255, 255, 255, 0.16));
 }
 .vp-flyout__item {
   display: flex;

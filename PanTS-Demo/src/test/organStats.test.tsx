@@ -76,6 +76,9 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	// Cine playback + oblique-MPR reset
 	startCine: vi.fn(() => false),
 	stopCine: vi.fn(),
+	setReferenceLinesEnabled: vi.fn(),
+	flipPaneHorizontal: vi.fn(),
+	rotatePane90Clockwise: vi.fn(),
 	resetMprOrientation: vi.fn(),
 }));
 

@@ -26,6 +26,7 @@ const {
     AdvancedMagnifyTool,
     BrushTool,
     TrackballRotateTool,
+    ReferenceLinesTool,
 } = cornerstoneTools;
 
 // Measurement tools the toolbar can switch the primary mouse button to. Length =
@@ -214,6 +215,56 @@ function getReferenceLineSlabThicknessControlsOn(viewportId: viewportIdTypes) {
         [viewportId1, viewportId2, viewportId3].indexOf(viewportId);
     return index !== -1;
 }
+
+// ---------------------------------------------------------------------------
+// Reference lines (OHIF-style) — a passive overlay showing where the pane the
+// user is actively scrolling through cuts the OTHER two, independent of
+// whatever tool currently owns the primary mouse button. Deliberately separate
+// from CrosshairsTool: that tool ALSO draws intersection lines, but only while
+// it's the active navigation tool — they vanish the instant you switch to Pan,
+// a measurement tool, or mask editing. Reference lines should keep showing then.
+//
+// Only ONE source is ever active at a time (the pane most recently scrolled),
+// matching how OHIF drives its "active viewport" reference lines rather than
+// showing all three planes' lines simultaneously, which gets noisy fast.
+// Cornerstone's ReferenceLinesTool tracks one `sourceViewportId` per instance
+// and draws that source plane into every OTHER viewport with the instance
+// enabled — so three named instances are registered (one per possible source)
+// and exactly one is enabled at a time; the other two stay disabled.
+// ---------------------------------------------------------------------------
+const REFERENCE_LINES_INSTANCE_BY_SOURCE: Record<viewportIdTypes, string> = {
+    [viewportId1]: "ReferenceLines_Axial",
+    [viewportId2]: "ReferenceLines_Sagittal",
+    [viewportId3]: "ReferenceLines_Coronal",
+};
+const REFERENCE_LINES_INSTANCE_NAMES = Object.values(REFERENCE_LINES_INSTANCE_BY_SOURCE);
+// SVG stroke-dasharray — a fine dotted line reads as a passive reference, distinct from
+// the crosshair's solid navigation lines.
+const REFERENCE_LINE_DASH = "1,5";
+
+function _referenceLinesSourceViewportId(pane: CinePane): viewportIdTypes {
+    return pane === "axial" ? viewportId1 : pane === "sagittal" ? viewportId2 : viewportId3;
+}
+
+// enabled=false disables all three instances. enabled=true enables only the instance
+// sourced from `sourcePane` (defaulting to axial) and disables the other two — call this
+// again with a different pane whenever the user scrolls a different one.
+export function setReferenceLinesEnabled(enabled: boolean, sourcePane: CinePane = "axial") {
+    const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+    if (!toolGroup) return;
+    const activeInstance = enabled ? REFERENCE_LINES_INSTANCE_BY_SOURCE[_referenceLinesSourceViewportId(sourcePane)] : null;
+    for (const instanceName of REFERENCE_LINES_INSTANCE_NAMES) {
+        if (instanceName === activeInstance) {
+            toolGroup.setToolEnabled(instanceName);
+        } else {
+            toolGroup.setToolDisabled(instanceName);
+        }
+    }
+    if (currentRenderingEngine) {
+        currentRenderingEngine.renderViewports([viewportId1, viewportId2, viewportId3]);
+        currentRenderingEngine.render();
+    }
+}
 // Subscribe to the nifti loader's real download progress (bytes loaded / total) so
 // the UI can show an accurate, measured ETA. Returns an unsubscribe fn.
 export function subscribeToVolumeProgress(
@@ -269,6 +320,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(ArrowAnnotateTool);
     cornerstoneTools.addTool(AdvancedMagnifyTool);
     cornerstoneTools.addTool(BrushTool);
+    cornerstoneTools.addTool(ReferenceLinesTool);
     toolGroup.addTool(PanTool.toolName);
     toolGroup.addTool(ZoomTool.toolName);
     toolGroup.addTool(StackScrollTool.toolName);
@@ -307,6 +359,25 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
         },
         handleRadius:8
     })
+    // Reference lines: one instance per pane as the "source", each showing that pane's
+    // slice position as a colored line in the OTHER two — starts disabled (opt-in tool).
+    for (const sourceViewportId of [viewportId1, viewportId2, viewportId3] as viewportIdTypes[]) {
+        const instanceName = REFERENCE_LINES_INSTANCE_BY_SOURCE[sourceViewportId];
+        toolGroup.addToolInstance(instanceName, ReferenceLinesTool.toolName, {
+            sourceViewportId,
+            enforceSameFrameOfReference: true,
+            showFullDimension: false,
+        });
+        annotation.config.style.setToolGroupToolStyles(toolGroupId, {
+            ...annotation.config.style.getToolGroupToolStyles(toolGroupId),
+            [instanceName]: {
+                color: getReferenceLineColor(sourceViewportId),
+                lineWidth: 1.5,
+                lineDash: REFERENCE_LINE_DASH,
+            },
+        });
+        toolGroup.setToolDisabled(instanceName);
+    }
     if (!_crosshairListenerRegistered) {
         eventTarget.addEventListener(cornerstoneTools.Enums.Events.CROSSHAIR_TOOL_CENTER_CHANGED, _handleCrosshairCenterChanged);
         _crosshairListenerRegistered = true;
@@ -783,7 +854,16 @@ export function jumpToMeasurement(uid: string): [number, number, number] | null 
 
 // ---------------------------------------------------------------------------
 // Cine playback — auto-scroll one MPR pane through its slices at a fixed frame
-// rate (Cornerstone's cine utility natively supports volume viewports).
+// rate. Hand-rolled with a plain setInterval + viewport.scroll(), NOT
+// cornerstoneTools.utilities.cine.playClip: that utility resolves which
+// volume to scroll via an internal "smallest spacing" heuristic across every
+// actor on the viewport when no volumeId is given, and its own volume-viewport
+// play path never passes one — with both the CT volume AND the segmentation
+// labelmap attached to each pane, that heuristic can pick the wrong actor (or
+// one with a degenerate slice range), so nothing visibly moves.
+// viewport.scroll(delta) sidesteps this entirely: it resolves the volume via
+// viewport.getVolumeId() (the same thing StackScrollTool does for wheel-driven
+// scrolling), so it's guaranteed to move the actual displayed CT.
 // ---------------------------------------------------------------------------
 
 export type CinePane = "axial" | "sagittal" | "coronal";
@@ -793,19 +873,32 @@ const CINE_VIEWPORT_BY_PANE: Record<CinePane, string> = {
   coronal: viewportId3,
 };
 
-let _cineElement: HTMLDivElement | null = null;
+type CineCapableViewport = {
+  scroll(delta?: number): void;
+  getNumberOfSlices(): number;
+  getSliceIndex(): number;
+};
+
+let _cineIntervalId: number | null = null;
 
 export function startCine(pane: CinePane, fps = 12): boolean {
   const engine = getRenderingEngine(renderingEngineId);
   if (!engine) return false;
   stopCine(); // one clip at a time
   try {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- element isn't on IViewport */
-    const viewport = engine.getViewport(CINE_VIEWPORT_BY_PANE[pane]) as any;
-    const element = viewport?.element as HTMLDivElement | undefined;
-    if (!element) return false;
-    cornerstoneTools.utilities.cine.playClip(element, { framesPerSecond: fps, loop: true });
-    _cineElement = element;
+    const viewport = engine.getViewport(CINE_VIEWPORT_BY_PANE[pane]) as unknown as
+      | CineCapableViewport
+      | undefined;
+    if (!viewport) return false;
+    const numSlices = viewport.getNumberOfSlices();
+    if (!numSlices || numSlices < 2) return false;
+    const clampedFps = Math.max(1, Math.min(100, fps));
+    _cineIntervalId = window.setInterval(() => {
+      // Loop back to the first slice once past the last — viewport.scroll clamps
+      // rather than wraps, so a step past the end needs an explicit jump to 0.
+      const current = viewport.getSliceIndex();
+      viewport.scroll(current >= numSlices - 1 ? -current : 1);
+    }, 1000 / clampedFps);
     return true;
   } catch (e) {
     console.warn("Cine playback unavailable:", e);
@@ -814,13 +907,67 @@ export function startCine(pane: CinePane, fps = 12): boolean {
 }
 
 export function stopCine() {
-  if (!_cineElement) return;
+  if (_cineIntervalId === null) return;
+  window.clearInterval(_cineIntervalId);
+  _cineIntervalId = null;
+}
+
+// ---------------------------------------------------------------------------
+// Per-pane flip / rotate — like Cine, these act on whichever pane is currently
+// "in focus" (VisualizationPage tracks that via scroll/click and passes it in).
+// flip()/getRotation()/setRotation() exist on BaseVolumeViewport but IViewport
+// (what getViewport() is typed to return) only exposes the narrower base
+// Viewport surface, so — same as elsewhere in this file (e.g. getCrosshairMm's
+// toolCenter cast) — the viewport is cast to a minimal interface for the calls
+// that are genuinely there at runtime but not on the public IViewport type.
+// ---------------------------------------------------------------------------
+type TransformableViewport = {
+  flip(flipDirection: { flipHorizontal?: boolean; flipVertical?: boolean }): void;
+  getRotation(): number;
+  setRotation(rotation: number): void;
+  render(): void;
+};
+
+function _getTransformableViewport(pane: CinePane): TransformableViewport | undefined {
+  const engine = getRenderingEngine(renderingEngineId);
+  if (!engine) return undefined;
+  return engine.getViewport(CINE_VIEWPORT_BY_PANE[pane]) as unknown as
+    | TransformableViewport
+    | undefined;
+}
+
+// Mirrors the pane left-right. flip() toggles internally (this.flipHorizontal =
+// !this.flipHorizontal), so calling it again on the same pane un-flips it — the
+// toggle behavior lives in Cornerstone itself, nothing to track on our side.
+// It also self-renders, unlike setRotation below.
+export function flipPaneHorizontal(pane: CinePane): void {
+  const viewport = _getTransformableViewport(pane);
+  if (!viewport) return;
   try {
-    cornerstoneTools.utilities.cine.stopClip(_cineElement);
-  } catch {
-    /* viewport already torn down */
+    viewport.flip({ flipHorizontal: true });
+  } catch (e) {
+    console.warn(`Flip failed for pane "${pane}":`, e);
   }
-  _cineElement = null;
+}
+
+// Rotates 90° clockwise from wherever the pane currently sits (cumulative — four
+// clicks return to the start). NOTE: cornerstone's rotation-angle sign convention
+// relative to "on-screen clockwise" isn't independently confirmed here — if a
+// case turns out to visibly rotate counter-clockwise instead, flip the `+ 90`
+// below to `- 90` (mod still needs the `+ 360` to stay positive in that case).
+export function rotatePane90Clockwise(pane: CinePane): void {
+  const viewport = _getTransformableViewport(pane);
+  if (!viewport) return;
+  try {
+    const next = (viewport.getRotation() + 90) % 360;
+    viewport.setRotation(next);
+    // Unlike flip(), setRotation() only triggers a CAMERA_MODIFIED event — it
+    // never calls render() itself, so without this the rotation wouldn't show
+    // until some unrelated interaction happened to re-render the pane.
+    viewport.render();
+  } catch (e) {
+    console.warn(`Rotate failed for pane "${pane}":`, e);
+  }
 }
 
 // Undo any oblique-plane rotation / slab thickness back to standard orthogonal

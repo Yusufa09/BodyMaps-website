@@ -15,6 +15,9 @@ import {
     IconCircle,
     IconClick,
     IconDownload, IconHome, IconListDetails, IconMicrophone, IconPlayerPause, IconPlayerPlay, IconPointer, IconReport,
+    IconFlipHorizontal,
+    IconGrid3x3,
+    IconRotateClockwise,
     IconRuler2,
     IconScanEye,
     IconSettings,
@@ -58,6 +61,7 @@ import {
     EDIT_ERASER,
     ELLIPSE_TOOL,
     enableVolume3D,
+    flipPaneHorizontal,
     getCrosshairMm,
     getCurrentVolumeModality,
     getMeasurementSummaries,
@@ -72,8 +76,10 @@ import {
     renderVisualization,
     resetMprOrientation,
     ROI_TOOL,
+    rotatePane90Clockwise,
     setActiveMaskEditTool,
     setActiveMeasurementTool,
+    setReferenceLinesEnabled,
     setToolGroupOpacity,
     setVisibilities,
     setZoom,
@@ -279,11 +285,28 @@ function VisualizationPage() {
 	);
 	const [zoomLevel, setZoomLevel] = useState(1);
 	const [crosshairToolActive, setCrosshairToolActive] = useState(true);
+	// OHIF-style reference lines: unlike the crosshair's own intersection lines (which only
+	// show while Crosshairs is the active navigation tool), this is a passive overlay that
+	// keeps showing where the pane being scrolled cuts the other two, regardless of which
+	// tool currently owns the mouse. Only one pane is ever the "source" at a time — a plain
+	// toggle for on/off. The imperative apply happens in the effect below, which also
+	// re-applies after any volume reload (a fresh tool group always starts with every tool
+	// disabled).
+	const [referenceLinesOn, setReferenceLinesOn] = useState(false);
+	// The pane the user most recently scrolled or clicked into — "whichever axis is in
+	// focus" for every single-pane tool (reference lines' source, cine, flip, rotate). A
+	// ref, not state: a wheel tick shouldn't force a re-render, and reading .current at
+	// call time is always fresh regardless of when the enclosing closure was created.
+	const activePaneRef = useRef<CinePane>("axial");
 	// Which measurement tool (or the magnify loupe) owns the primary mouse button
 	// (null = navigation/crosshair).
 	const [activeMeasureTool, setActiveMeasureTool] = useState<PrimaryMouseToolName | null>(null);
-	// Cine playback: auto-scroll the current pane through its slices.
+	// Cine playback: auto-scroll the current pane through its slices. The FPS slider is
+	// always visible next to the play button (not just once playing) so the speed can be
+	// dialed in before hitting play; changing it while already playing restarts the clip
+	// at the new rate instead of waiting for a stop/start.
 	const [cinePlaying, setCinePlaying] = useState(false);
+	const [cineFps, setCineFps] = useState(12);
 	// Mask editing: right-side panel + which brush (paint/erase) owns the mouse.
 	const [showEditPanel, setShowEditPanel] = useState(false);
 	const [editMode, setEditMode] = useState<MaskEditMode>(null);
@@ -322,6 +345,26 @@ function VisualizationPage() {
 				// Open the flyout just below the toolbar button.
 				const r = measureBtnRef.current.getBoundingClientRect();
 				setMeasureMenuPos({ top: r.bottom + 8, left: r.left });
+			}
+			return next;
+		});
+	};
+
+	// Cine popup — a single toolbar button opens a small panel with the Play/Pause button
+	// and the FPS slider together, instead of cluttering the main toolbar with either.
+	// Same portal-flyout pattern as the measurement menu above.
+	const [cineMenuOpen, setCineMenuOpen] = useState(false);
+	const [cineMenuPos, setCineMenuPos] = useState<{ top: number; left: number } | null>(null);
+	const cineGroupRef = useRef<HTMLDivElement>(null);
+	const cineBtnRef = useRef<HTMLButtonElement>(null);
+	const cineMenuRef = useRef<HTMLDivElement>(null);
+
+	const toggleCineMenu = () => {
+		setCineMenuOpen((open) => {
+			const next = !open;
+			if (next && cineBtnRef.current) {
+				const r = cineBtnRef.current.getBoundingClientRect();
+				setCineMenuPos({ top: r.bottom + 8, left: r.left });
 			}
 			return next;
 		});
@@ -394,6 +437,25 @@ function VisualizationPage() {
 			window.removeEventListener("resize", onReflow);
 		};
 	}, [measureMenuOpen]);
+
+	// Same outside-click/reflow close behavior for the cine popup.
+	useEffect(() => {
+		if (!cineMenuOpen) return;
+		const onPointerDown = (e: globalThis.MouseEvent) => {
+			const t = e.target as Node;
+			if (cineGroupRef.current?.contains(t) || cineMenuRef.current?.contains(t)) return;
+			setCineMenuOpen(false);
+		};
+		const onReflow = () => setCineMenuOpen(false);
+		document.addEventListener("mousedown", onPointerDown);
+		window.addEventListener("scroll", onReflow, true);
+		window.addEventListener("resize", onReflow);
+		return () => {
+			document.removeEventListener("mousedown", onPointerDown);
+			window.removeEventListener("scroll", onReflow, true);
+			window.removeEventListener("resize", onReflow);
+		};
+	}, [cineMenuOpen]);
 
 	useEffect(() => {
 		const unsubscribe = subscribeToCrosshairChanges((mm) => {
@@ -495,24 +557,60 @@ function VisualizationPage() {
 		return unsubscribe;
 	}, [takeSnapshot]);
 
-	// ---- Cine playback ------------------------------------------------------------
+	// ---- Cine playback / flip / rotate — all act on the "focused" pane -------------
 
-	// The pane cine scrolls: the fullscreen 2D pane when in a single view, else axial.
-	const cinePane: CinePane =
-		viewMode === "sagittal" || viewMode === "coronal" ? viewMode : "axial";
+	// The fullscreen 2D pane when in a single view (unambiguous — only one is on
+	// screen), else whichever of the three MPR panes was most recently scrolled/clicked
+	// (activePaneRef), defaulting to axial until the user interacts with a pane at all.
+	// Recomputed fresh on every call — cheap, and guarantees flip/rotate (single-click
+	// actions with no intervening re-render) never act on a stale pane.
+	const getFocusedPane = (): CinePane =>
+		viewMode === "axial" || viewMode === "sagittal" || viewMode === "coronal"
+			? viewMode
+			: activePaneRef.current;
+	const cinePane: CinePane = getFocusedPane();
 
+	const handleFlipHorizontal = () => {
+		const pane = getFocusedPane();
+		flipPaneHorizontal(pane);
+		sessionRef.current?.log("view", `Flipped ${pane} horizontally`);
+	};
+
+	const handleRotate90Clockwise = () => {
+		const pane = getFocusedPane();
+		rotatePane90Clockwise(pane);
+		sessionRef.current?.log("view", `Rotated ${pane} 90° clockwise`);
+	};
+
+	// Reads cinePlaying directly rather than through setState's functional-updater form —
+	// React StrictMode double-invokes that form in dev to catch impure updaters, which would
+	// call startCine/stopCine twice per click (this app runs in StrictMode; see the similar
+	// double-run workarounds in dicomLocal.ts).
 	const toggleCine = useCallback(() => {
-		setCinePlaying((playing) => {
-			if (playing) {
-				stopCine();
-				sessionRef.current?.log("view", "Stopped cine playback");
-				return false;
-			}
-			const ok = startCine(cinePane);
-			if (ok) sessionRef.current?.log("view", `Started cine playback (${cinePane})`);
-			return ok;
-		});
-	}, [cinePane]);
+		if (cinePlaying) {
+			stopCine();
+			setCinePlaying(false);
+			sessionRef.current?.log("view", "Stopped cine playback");
+			return;
+		}
+		const ok = startCine(cinePane, cineFps);
+		setCinePlaying(ok);
+		if (ok) {
+			sessionRef.current?.log("view", `Started cine playback (${cinePane}, ${cineFps} fps)`);
+		} else {
+			console.warn(`Cine playback failed to start for pane "${cinePane}"`);
+		}
+	}, [cinePlaying, cinePane, cineFps]);
+
+	// Live-adjust the frame rate: if a clip is already running, restart it immediately at
+	// the new speed rather than waiting for the next stop/start.
+	const handleCineFpsChange = (fps: number) => {
+		setCineFps(fps);
+		if (cinePlaying) {
+			stopCine();
+			startCine(cinePane, fps);
+		}
+	};
 
 	// Changing the layout invalidates the playing pane; stop rather than guess. Also
 	// stop on unmount so the interval doesn't outlive the viewports.
@@ -904,6 +1002,25 @@ function VisualizationPage() {
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [renderingEngine, viewportIds, volumeId]);
+
+	// Apply the reference-lines toggle once the engine/viewports/volume are ready, and
+	// re-apply on both a user toggle and a volume reload (a fresh tool group always starts
+	// with every tool disabled).
+	useEffect(() => {
+		if (renderingEngine && viewportIds.length && volumeId) {
+			setReferenceLinesEnabled(referenceLinesOn, activePaneRef.current);
+		}
+	}, [referenceLinesOn, renderingEngine, viewportIds, volumeId]);
+
+	// Wheel-scrolling or clicking a pane makes it "focused" — the reference-lines source,
+	// and the target for cine/flip/rotate. No-ops the reference-lines re-apply while that
+	// tool is off; the ref update itself is cheap enough to run unconditionally.
+	const handlePaneFocus = (pane: CinePane) => {
+		activePaneRef.current = pane;
+		if (referenceLinesOn) setReferenceLinesEnabled(true, pane);
+	};
+	const handlePaneWheel = (pane: CinePane) => () => handlePaneFocus(pane);
+	const handlePaneMouseDown = (pane: CinePane) => () => handlePaneFocus(pane);
 
 	// Apply a shared deep-link's view state once the volume is ready (orientation, window,
 	// opacity, hidden organs, crosshair). Runs a single time — after that the URL is just a
@@ -1485,19 +1602,85 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 												</span>
 											</button>
 											<button
-												className={`vp-tool ${cinePlaying ? "vp-tool--active" : ""}`}
-												onClick={toggleCine}
-												aria-label={cinePlaying ? "Stop cine playback" : "Start cine playback"}
+												className={`vp-tool ${referenceLinesOn ? "vp-tool--active" : ""}`}
+												onClick={() => setReferenceLinesOn((v) => !v)}
+												aria-pressed={referenceLinesOn}
+												aria-label="Reference lines"
 											>
-												{cinePlaying ? (
-													<IconPlayerPause size={20} color="#08090b" />
-												) : (
-													<IconPlayerPlay size={20} color="white" />
-												)}
+												<IconGrid3x3 size={20} color={referenceLinesOn ? "#08090b" : "white"} />
 												<span className="vp-tool__tip">
-													{cinePlaying ? "Stop cine (V)" : `Cine: play through ${cinePane} slices (V)`}
+													{referenceLinesOn
+														? "Reference lines: on — scroll a pane to make it the source"
+														: "Reference lines — dotted line in the other panes for whichever pane you scroll"}
 												</span>
 											</button>
+											<button
+												className="vp-tool"
+												onClick={handleFlipHorizontal}
+												aria-label="Flip horizontal"
+											>
+												<IconFlipHorizontal size={20} color="white" />
+												<span className="vp-tool__tip">Flip horizontal — the focused pane (last one scrolled or clicked)</span>
+											</button>
+											<button
+												className="vp-tool"
+												onClick={handleRotate90Clockwise}
+												aria-label="Rotate 90° clockwise"
+											>
+												<IconRotateClockwise size={20} color="white" />
+												<span className="vp-tool__tip">Rotate 90° clockwise — the focused pane (last one scrolled or clicked)</span>
+											</button>
+											<div className="vp-toolgroup" ref={cineGroupRef}>
+												<button
+													ref={cineBtnRef}
+													className={`vp-tool ${cinePlaying || cineMenuOpen ? "vp-tool--active" : ""}`}
+													onClick={toggleCineMenu}
+													aria-label="Cine controls"
+													aria-haspopup="menu"
+													aria-expanded={cineMenuOpen}
+												>
+													{cinePlaying ? (
+														<IconPlayerPause size={20} color={cineMenuOpen ? "#08090b" : "white"} />
+													) : (
+														<IconPlayerPlay size={20} color={cineMenuOpen ? "#08090b" : "white"} />
+													)}
+													<span className="vp-tool__tip">
+														{cinePlaying ? `Cine playing (${cineFps} fps) — click for controls` : "Cine controls (V to play)"}
+													</span>
+												</button>
+												{cineMenuOpen && cineMenuPos &&
+													createPortal(
+														<div
+															className="vp-flyout vp-flyout--cine"
+															role="menu"
+															ref={cineMenuRef}
+															style={{ position: "fixed", top: cineMenuPos.top, left: cineMenuPos.left }}
+														>
+															<button
+																className={`vp-tool vp-tool--cine-play ${cinePlaying ? "vp-tool--active" : ""}`}
+																onClick={toggleCine}
+																aria-label={cinePlaying ? "Pause cine playback" : "Play cine playback"}
+															>
+																{cinePlaying ? (
+																	<IconPlayerPause size={20} color="#08090b" />
+																) : (
+																	<IconPlayerPlay size={20} color="white" />
+																)}
+															</button>
+															<label className="vp-tb-slider vp-tb-slider--cine" title="Cine playback speed">
+																<span className="vp-tb-slider__label">FPS</span>
+																<input
+																	type="range" min="1" max="100" step="1" className="vp-range"
+																	aria-label="Cine frames per second"
+																	value={cineFps}
+																	onChange={(e) => handleCineFpsChange(Number(e.target.value))}
+																/>
+																<span className="vp-tb-slider__val">{cineFps}</span>
+															</label>
+														</div>,
+														document.body
+													)}
+											</div>
 											<button
 												className="vp-tool"
 												onClick={() => undoMaskEdit()}
@@ -1802,8 +1985,10 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 						ref={axial_ref}
 						style={panelStyle("axial")}
 						onClick={(e) => { handleMouseClick(e); }}
+						onMouseDown={handlePaneMouseDown("axial")}
 						onMouseMove={handlePaneHover("axial")}
 						onMouseLeave={handlePaneHoverLeave}
+						onWheel={handlePaneWheel("axial")}
 					></div>
 					<div
 						className={`sagittal ${loading ? "" : "vp-pane vp-pane--sagittal"}${hoverIdentifyEnabled ? " vp-pane--hover-identify" : ""}`}
@@ -1811,8 +1996,10 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 						ref={sagittal_ref}
 						style={panelStyle("sagittal")}
 						onClick={(e) => { handleMouseClick(e); }}
+						onMouseDown={handlePaneMouseDown("sagittal")}
 						onMouseMove={handlePaneHover("sagittal")}
 						onMouseLeave={handlePaneHoverLeave}
+						onWheel={handlePaneWheel("sagittal")}
 					></div>
 
 					<div
@@ -1821,8 +2008,10 @@ const flaggedOrgans = useMemo(() => summarizeOutOfRange(statRows), [statRows]);
 						ref={coronal_ref}
 						style={panelStyle("coronal")}
 						onClick={(e) => { handleMouseClick(e); }}
+						onMouseDown={handlePaneMouseDown("coronal")}
 						onMouseMove={handlePaneHover("coronal")}
 						onMouseLeave={handlePaneHoverLeave}
+						onWheel={handlePaneWheel("coronal")}
 					></div>
 
 					<div className={`render ${loading ? "" : "vp-pane vp-pane--render"}`} data-label="3D" style={panelStyle("3d")}>
