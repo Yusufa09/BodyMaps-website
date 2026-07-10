@@ -218,7 +218,7 @@ function VisualizationPage() {
 	const VisualizationContainer_ref = useRef(null);
 	//   const lastClickInfoRef = useRef(null);
 	const preIsolateCheckStateRef = useRef<boolean[] | null>(null);
-	const [isolatedOrgan, setIsolatedOrgan] = useState<string | null>(null);
+	//const [isolatedOrgan, setIsolatedOrgan] = useState<string | null>(null);
 
 	//   const [sliceAxial, setSliceAxial] = useState(0);
 	//   const [sliceSagittal, setSliceSagittal] = useState(0);
@@ -987,7 +987,6 @@ function VisualizationPage() {
 			next[labelId] = true;
 			return next;
 		});
-		setIsolatedOrgan(organName);
 	}, []);
 
 	const handleClearIsolation = useCallback(() => {
@@ -995,7 +994,6 @@ function VisualizationPage() {
 			setCheckState(preIsolateCheckStateRef.current);
 			preIsolateCheckStateRef.current = null;
 		}
-		setIsolatedOrgan(null);
 	}, []);
 
 	const handleHideOrgans = useCallback((organNames: string[]) => {
