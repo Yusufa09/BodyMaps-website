@@ -72,6 +72,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
 	Probe: "HU probe",
 	RectangleROI: "Rectangle ROI",
 	EllipticalROI: "Ellipse ROI",
+	PlanarFreehandROI: "Freehand ROI",
 	ArrowAnnotate: "Arrow note",
 };
 

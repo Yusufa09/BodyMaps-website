@@ -21,6 +21,7 @@ const {
     RectangleROITool,
     AngleTool,
     EllipticalROITool,
+    PlanarFreehandROITool,
     BidirectionalTool,
     ArrowAnnotateTool,
     AdvancedMagnifyTool,
@@ -31,16 +32,19 @@ const {
 
 // Measurement tools the toolbar can switch the primary mouse button to. Length =
 // distance in mm, Bidirectional = long + short axis (RECIST), Probe = HU readout
-// at a point, RectangleROI/EllipticalROI = area + mean/max/min HU, Angle = angle
-// in degrees between two segments, Arrow = labeled pointer at a finding.
+// at a point, RectangleROI/EllipticalROI/FreehandROI = area + mean/max/min HU (the
+// freehand one traces an arbitrary closed outline instead of a fixed rect/ellipse
+// shape), Angle = angle in degrees between two segments, Arrow = labeled pointer at
+// a finding.
 export const LENGTH_TOOL = LengthTool.toolName;
 export const BIDIRECTIONAL_TOOL = BidirectionalTool.toolName;
 export const PROBE_TOOL = ProbeTool.toolName;
 export const ROI_TOOL = RectangleROITool.toolName;
 export const ANGLE_TOOL = AngleTool.toolName;
 export const ELLIPSE_TOOL = EllipticalROITool.toolName;
+export const FREEHAND_ROI_TOOL = PlanarFreehandROITool.toolName;
 export const ARROW_TOOL = ArrowAnnotateTool.toolName;
-export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, BIDIRECTIONAL_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL, ARROW_TOOL] as const;
+export const MEASUREMENT_TOOL_NAMES = [LENGTH_TOOL, BIDIRECTIONAL_TOOL, ANGLE_TOOL, PROBE_TOOL, ROI_TOOL, ELLIPSE_TOOL, FREEHAND_ROI_TOOL, ARROW_TOOL] as const;
 export type MeasurementToolName = (typeof MEASUREMENT_TOOL_NAMES)[number];
 
 // Magnify is a viewing aid, not a measurement: it shares the activation path (one
@@ -316,6 +320,7 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     cornerstoneTools.addTool(RectangleROITool);
     cornerstoneTools.addTool(AngleTool);
     cornerstoneTools.addTool(EllipticalROITool);
+    cornerstoneTools.addTool(PlanarFreehandROITool);
     cornerstoneTools.addTool(BidirectionalTool);
     cornerstoneTools.addTool(ArrowAnnotateTool);
     cornerstoneTools.addTool(AdvancedMagnifyTool);
@@ -329,6 +334,12 @@ export async function renderVisualization(ref1: HTMLDivElement, ref2: HTMLDivEle
     toolGroup.addTool(RectangleROITool.toolName);
     toolGroup.addTool(AngleTool.toolName);
     toolGroup.addTool(EllipticalROITool.toolName);
+    // allowOpenContours: false — always auto-close into a polygon so it behaves like
+    // the other ROI tools (area + mean/min/max HU), not an open freehand line.
+    toolGroup.addTool(PlanarFreehandROITool.toolName, {
+        calculateStats: true,
+        allowOpenContours: false,
+    });
     toolGroup.addTool(BidirectionalTool.toolName);
     toolGroup.addTool(ArrowAnnotateTool.toolName);
     toolGroup.addTool(AdvancedMagnifyTool.toolName);
@@ -817,7 +828,12 @@ function formatAnnotationValue(a: any): string {
 }
 
 function annotationCenter(a: any): [number, number, number] | null {
-  const pts = a?.data?.handles?.points as number[][] | undefined;
+  // Most tools keep their corner/endpoint handles in data.handles.points. The
+  // freehand ROI's outline lives in data.contour.polyline instead (handles.points
+  // stays empty for it) — fall back to averaging that when handles are empty.
+  const pts = (a?.data?.handles?.points?.length
+    ? a.data.handles.points
+    : a?.data?.contour?.polyline) as number[][] | undefined;
   if (!pts?.length) return null;
   const c: [number, number, number] = [0, 0, 0];
   for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }

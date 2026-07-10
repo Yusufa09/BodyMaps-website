@@ -70,6 +70,7 @@ vi.mock("../helpers/CornerstoneNifti2", () => ({
 	ROI_TOOL: "RectangleROI",
 	ANGLE_TOOL: "Angle",
 	ELLIPSE_TOOL: "EllipticalROI",
+	FREEHAND_ROI_TOOL: "PlanarFreehandROI",
 	BIDIRECTIONAL_TOOL: "Bidirectional",
 	ARROW_TOOL: "ArrowAnnotate",
 	MAGNIFY_TOOL: "AdvancedMagnify",

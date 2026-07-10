@@ -21,6 +21,7 @@ import {
     IconFlipHorizontal,
     IconGrid3x3,
     IconId,
+    IconLasso,
     IconLayoutSidebarRight,
     IconRotateClockwise,
     IconRuler2,
@@ -67,6 +68,7 @@ import {
     ELLIPSE_TOOL,
     enableVolume3D,
     flipPaneHorizontal,
+    FREEHAND_ROI_TOOL,
     getCrosshairMm,
     getCurrentVolumeModality,
     getMeasurementSummaries,
@@ -239,6 +241,7 @@ const MEASURE_TOOLS: { name: PrimaryMouseToolName; label: string; Icon: typeof I
 	{ name: PROBE_TOOL, label: "HU at point", Icon: IconClick, key: "P" },
 	{ name: ROI_TOOL, label: "Rect ROI · HU & area", Icon: IconSquareDashed, key: "R" },
 	{ name: ELLIPSE_TOOL, label: "Ellipse ROI · HU & area", Icon: IconCircle, key: "E" },
+	{ name: FREEHAND_ROI_TOOL, label: "Freehand ROI · HU & area", Icon: IconLasso, key: "F" },
 	{ name: ARROW_TOOL, label: "Arrow · label a finding", Icon: IconArrowUpRight, key: "T" },
 	{ name: MAGNIFY_TOOL, label: "Magnify loupe", Icon: IconZoomIn, key: "G" },
 ];
@@ -734,6 +737,7 @@ function VisualizationPage() {
 				p: PROBE_TOOL,
 				r: ROI_TOOL,
 				e: ELLIPSE_TOOL,
+				f: FREEHAND_ROI_TOOL,
 				t: ARROW_TOOL,
 				g: MAGNIFY_TOOL,
 			};
