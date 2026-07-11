@@ -1,4 +1,4 @@
-import { cache, init as coreInit, Enums, eventTarget, getRenderingEngine, imageLoader, metaData, RenderingEngine, setVolumesForViewports, utilities as csCoreUtils, volumeLoader } from "@cornerstonejs/core";
+import { cache, init as coreInit, utilities as csCoreUtils, Enums, eventTarget, getRenderingEngine, imageLoader, metaData, RenderingEngine, setVolumesForViewports, volumeLoader } from "@cornerstonejs/core";
 import type { ColorLUT, Point2, Point3 } from "@cornerstonejs/core/types";
 import { cornerstoneNiftiImageLoader, createNiftiImageIdsAndCacheMetadata, init as niftiImageLoaderInit } from "@cornerstonejs/nifti-volume-loader";
 import * as cornerstoneTools from '@cornerstonejs/tools';
@@ -1557,7 +1557,9 @@ export function getOrganLabelAtPoint(pane: CinePane, clientX: number, clientY: n
     const [i, j, k] = volume.imageData.worldToIndex(world).map((v) => Math.round(v));
     const [dimX, dimY, dimZ] = volume.voxelManager.dimensions;
     if (i < 0 || j < 0 || k < 0 || i >= dimX || j >= dimY || k >= dimZ) return undefined;
-    return volume.voxelManager.getAtIJK(i, j, k);
+    const res = volume.voxelManager.getAtIJK(i, j, k);
+    // make sure res is not RGB
+    if (typeof res === "number") return res;
 }
 
 // Centroid (world mm) of every segment label, from one pass over the labelmap. Cached for
