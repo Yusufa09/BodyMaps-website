@@ -5,7 +5,7 @@ import {
   ROI_TOOL,
   moveCornerstoneCrosshairToMm,
   getOrganCentroids,
-  setToolGroupOpacity,
+  setFillOpacity,
   setZoom as csSetZoom,
   zoomToFit as csZoomToFit,
 } from "../../helpers/CornerstoneNifti2";
