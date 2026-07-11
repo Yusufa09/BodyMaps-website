@@ -1549,7 +1549,7 @@ function VisualizationPage() {
 			void loadPercentileContext();
 		}
 };
-
+// Trigger typecheck using the latest AI assistant files.
 const aiActions = useMemo(() => buildViewerActions({
 	checkBoxData,
 	setCheckState,
