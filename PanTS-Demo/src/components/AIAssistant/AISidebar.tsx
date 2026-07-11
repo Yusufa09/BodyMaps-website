@@ -1,3 +1,4 @@
+// Trigger typecheck using the latest AI assistant files.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE } from "../../helpers/constants";
 import type {
