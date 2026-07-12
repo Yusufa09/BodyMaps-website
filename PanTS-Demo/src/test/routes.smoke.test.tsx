@@ -41,6 +41,8 @@ describe("route smoke tests", () => {
 
 	it("UploadPage renders", async () => {
 		renderRoute(<UploadPage />);
-		expect(await screen.findByText("Recent Uploads")).toBeInTheDocument();
+		expect(
+			await screen.findByText("Drag a file or folder here, or")
+		).toBeInTheDocument();
 	});
 });
