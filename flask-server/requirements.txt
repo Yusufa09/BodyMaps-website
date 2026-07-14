@@ -28,6 +28,7 @@ requests==2.32.3
 reportlab==4.4.1
 scipy>=1.13.0
 setuptools==75.6.0
+SimpleITK>=2.4.0
 SQLAlchemy==2.0.37
 typing_extensions==4.12.2
 tzlocal==5.2
