@@ -81,6 +81,20 @@ export const segmentation_category_colors: { [key: number]: Color } = {
 	32: [192, 192, 192, 254], // CBD stent (silver-gray)
 };
 
+// Rotating palette of colours to hand out to new classes.
+// No colour clash with existing organ palette above.
+// Kept seperate from segmentation_category_colors, as these are assigned dynamically, not per-organ.
+export const NEW_CLASS_PALETTE: Color[] = [
+	[255, 99, 132, 255],  // pink
+	[54, 162, 235, 255],  // blue
+	[255, 206, 86, 255],  // yellow
+	[75, 192, 192, 255],  // teal
+	[153, 102, 255, 255], // purple
+	[255, 159, 64, 255],  // orange
+	[46, 204, 113, 255],  // green
+	[231, 76, 60, 255],   // red
+  ];
+
 export const segmentation_categories: SegmentationCategories[] = [
 	"adrenal_gland_left",
 	"adrenal_gland_right",
