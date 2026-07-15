@@ -9,6 +9,7 @@ import {
     IconArrowForwardUp,
     IconArrowsCross,
     IconArrowUpRight,
+    IconBrush,
     IconCamera,
     IconChartBar,
     IconCheck,
@@ -87,6 +88,7 @@ import {
     setActiveMaskEditTool,
     setActiveMeasurementTool,
     setFillOpacity,
+    setOutlineOpacity,
     setPaneSliceIndex,
     setReferenceLinesEnabled,
     setVisibilities,
@@ -383,6 +385,7 @@ function VisualizationPage() {
 	const [opacityValue, setOpacityValue] = useState(
 		APP_CONSTANTS.DEFAULT_SEGMENTATION_OPACITY * 100
 	);
+	const [outlineOpacityValue, setOutlineOpacityValue] = useState(0);
 	// Current/total slice per MPR pane, for the "245/519" caption + drag scrollbar.
 	// Populated by subscribeToSliceChanges once the volume is ready; null until then.
 	const [sliceInfo, setSliceInfo] = useState<Record<CinePane, SliceInfo | null>>({
@@ -1439,6 +1442,25 @@ function VisualizationPage() {
 		checkBoxData,
 	]);
 
+	const handleOpacityOnSliderChange = (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const value = Number(event.target.value);
+		setOpacityValue(value);
+		setFillOpacity(value / 100);
+		sessionRef.current?.log("opacity", `Fill opacity set to ${value}%`, 1200);
+	};
+
+	const handleOutlineOpacityChange = (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const value = Number(event.target.value);
+		setOutlineOpacityValue(value);
+		setOutlineOpacity(value / 100);
+		sessionRef.current?.log("opacity", `Border opacity set to ${value}%`, 1200);
+	};
+
+
 	// Per-organ volume (cm³) + mean HU — the existing quantitative layer the backend
 	// already computes for the PDF report, surfaced inline. Fetched once, on first open.
 	const loadOrganStats = async () => {
@@ -1843,7 +1865,30 @@ const aiAvailableOrgans = useMemo(() => {
 									ref={adjustFlyout.menuRef}
 									style={{ position: "fixed", top: adjustFlyout.pos.top, left: adjustFlyout.pos.left }}
 								>
-					
+									{!isDicom && (
+										<>
+											<label className="vp-tb-slider" title="Mask fill opacity">
+												<span className="vp-tb-slider__label">Fill</span>
+												<input
+													type="range" min="0" max="100" step="1" className="vp-range"
+													aria-label="Mask fill opacity"
+													value={opacityValue}
+													onChange={handleOpacityOnSliderChange}
+												/>
+												<span className="vp-tb-slider__val">{Math.round(opacityValue)}%</span>
+											</label>
+											<label className="vp-tb-slider" title="Mask border opacity">
+												<span className="vp-tb-slider__label">Border</span>
+												<input
+													type="range" min="0" max="100" step="1" className="vp-range"
+													aria-label="Mask border opacity"
+													value={outlineOpacityValue}
+													onChange={handleOutlineOpacityChange}
+												/>
+												<span className="vp-tb-slider__val">{Math.round(outlineOpacityValue)}%</span>
+											</label>
+										</>
+									)}
 									<label className="vp-tb-slider" title="Brightness (window level)">
 										<span className="vp-tb-slider__label">Brt</span>
 										<input
@@ -2125,16 +2170,21 @@ const aiAvailableOrgans = useMemo(() => {
 											</button>
 											{!isDicom && (
 												<button
-													className="vp-tool"
+													className={`vp-tool ${showEditPanel || editMode ? "vp-tool--active" : ""}`}
 													onClick={() => {
-														setViewMode("3d");
-														setShowToolbar(false);
-														setShowReportScreen(true);
+														setShowStats(false);
+														setShowMetadata(false);
+														setShowMeasurePanel(false);
+														setShowEditPanel((v) => {
+															const next = !v;
+															if (!next) setEditMode(null);
+															return next;
+														});
 													}}
-													aria-label="Open report"
+													aria-label="Edit masks"
 												>
-													<IconReport size={20} color="white" />
-													<span className="vp-tool__tip">Report</span>
+													<IconBrush size={20} color={showEditPanel || editMode ? "#08090b" : "white"} />
+													<span className="vp-tool__tip">Edit masks</span>
 												</button>
 											)}
 
@@ -2311,6 +2361,16 @@ const aiAvailableOrgans = useMemo(() => {
 												>
 													<IconDownload size={20} color="white" />
 													<span className="vp-tool__tip">Download</span>
+												</button>
+											)}
+											{!isDicom && (
+												<button
+													className="vp-tool"
+													onClick={() => setShowReportScreen(true)}
+													aria-label="Open report"
+												>
+													<IconReport size={20} color="white" />
+													<span className="vp-tool__tip">Report</span>
 												</button>
 											)}
 
