@@ -1,7 +1,7 @@
 import os
 import uuid
-import subprocess
 import signal
+import subprocess
 import re
 import csv
 import shlex
@@ -15,44 +15,85 @@ load_dotenv()
 # Only one model inference runs at a time to avoid GPU OOM
 _gpu_lock = threading.Lock()
 
-# Track the active subprocess so it can be killed
-_active_proc: 'subprocess.Popen | None' = None
-_active_proc_lock = threading.Lock()
+# ── Per-session subprocess tracking (for user-initiated cancel) ──
+# Each session's worker thread binds its session id thread-locally; _tracked_run
+# then registers the live Popen under that id so /api/cancel-inference/<sid>
+# can kill exactly that session's process group and nobody else's.
+_session_procs = {}
+_session_procs_lock = threading.Lock()
+_thread_session = threading.local()
+
+
+def bind_session(session_id):
+    """Associate the calling worker thread with a session id."""
+    _thread_session.sid = session_id
+
+
+def _tracked_run(cmd, check=False, capture_output=False, **kwargs):
+    """Drop-in for subprocess.run that makes the child killable per-session.
+
+    Starts the child in its own process group (start_new_session) and registers
+    it under the thread's bound session id for cancel_session(). Mirrors the
+    subprocess.run semantics used in this module (check / capture_output /
+    shell / executable / cwd / stdout / stderr / text).
+    """
+    if capture_output:
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
+    kwargs.setdefault("start_new_session", True)
+    sid = getattr(_thread_session, "sid", None)
+    proc = subprocess.Popen(cmd, **kwargs)
+    if sid:
+        with _session_procs_lock:
+            _session_procs[sid] = proc
+    try:
+        stdout, stderr = proc.communicate()
+    finally:
+        if sid:
+            with _session_procs_lock:
+                if _session_procs.get(sid) is proc:
+                    _session_procs.pop(sid, None)
+    if check and proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def cancel_session(session_id):
+    """Best-effort kill of one session's inference subprocess (SIGTERM the
+    process group, SIGKILL 5s later if it ignores that). Returns True if a
+    live process was signalled. Safe to call for queued/unknown sessions."""
+    with _session_procs_lock:
+        proc = _session_procs.get(session_id)
+    if not proc or proc.poll() is not None:
+        return False
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+
+        def _force_kill():
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_force_kill, daemon=True).start()
+        return True
+    except Exception as e:
+        print(f"[cancel] failed to kill process for session {session_id}: {e}")
+        return False
 
 
 def cancel_all_inference():
-    """Kill the currently running inference subprocess (if any)."""
-    global _active_proc
-    with _active_proc_lock:
-        proc = _active_proc
-    if proc and proc.poll() is None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-
-
-def _run_subprocess(cmd: str, **kwargs):
-    """Run a shell command, tracking it so cancel_all_inference() can kill it."""
-    global _active_proc
-    proc = subprocess.Popen(
-        cmd,
-        shell=True,
-        executable='/bin/bash',
-        start_new_session=True,
-        **kwargs,
-    )
-    with _active_proc_lock:
-        _active_proc = proc
-    ret = proc.wait()
-    with _active_proc_lock:
-        if _active_proc is proc:
-            _active_proc = None
-    if ret != 0:
-        raise subprocess.CalledProcessError(ret, cmd)
+    """Kill every tracked inference subprocess (admin 'stop everything').
+    Prefer cancel_session() for a single user's job; this is the blunt
+    kill-all kept for the global /cancel-inference endpoint."""
+    with _session_procs_lock:
+        sids = list(_session_procs.keys())
+    for sid in sids:
+        cancel_session(sid)
 
 def get_least_used_gpu(default_gpu=None):
     if default_gpu is None:
@@ -92,13 +133,27 @@ def _resolve_conda_activate_path():
     return ""
 
 
-def run_auto_segmentation(input_path, session_dir, model):
+def run_auto_segmentation(input_path, session_dir, model, session_id=None, on_start=None):
     """
     Dispatch to the appropriate model inference function.
     Serialized via _gpu_lock so concurrent requests queue instead of OOM-ing.
     Returns the output directory path on success, raises on failure.
+
+    session_id: binds this worker thread so _tracked_run/cancel_session can
+        target its subprocesses. on_start: called once the GPU slot is
+        acquired (i.e. the job leaves the queue); returning False aborts the
+        run (used when the user cancelled while the job was still queued) and
+        makes this function return None.
     """
     with _gpu_lock:
+        if on_start is not None:
+            try:
+                if on_start() is False:
+                    return None
+            except Exception as e:
+                print(f"[on_start] callback error for {session_id}: {e}")
+        if session_id:
+            bind_session(session_id)
         if model == 'ePAI':
             conda_path = _resolve_conda_activate_path()
             return _run_epai_inference(
@@ -403,7 +458,12 @@ def _run_epai_inference(input_path: str, session_dir: str, conda_path: str, epai
         print(f"[INFO] Running ePAI command for case {case_id}")
         print(full_cmd)
         try:
-            _run_subprocess(full_cmd)
+            _tracked_run(
+                full_cmd,
+                shell=True,
+                executable="/bin/bash",
+                check=True,
+            )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(
                 "ePAI inference command failed"
@@ -473,7 +533,8 @@ def _run_suprem_inference(input_path: str, session_dir: str) -> str:
     print(f"[INFO] Running SuPreM native inference")
     print(full_cmd)
     try:
-        _run_subprocess(full_cmd, cwd=suprem_src)
+        _tracked_run(full_cmd, shell=True, executable="/bin/bash", check=True,
+                     cwd=suprem_src)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"SuPreM inference failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
@@ -532,7 +593,7 @@ def _run_openvae_inference(input_path: str, session_dir: str) -> str:
     )
     print(f"[INFO] Running OpenVAE inference\n{full_cmd}")
     try:
-        _run_subprocess(full_cmd, cwd=openvae_src)
+        _tracked_run(full_cmd, shell=True, executable="/bin/bash", check=True, cwd=openvae_src)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"OpenVAE inference failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
@@ -624,7 +685,10 @@ def _run_medformer_inference(input_path: str, session_dir: str) -> str:
     )
     print(f"[INFO] Running MedFormer inference\n{full_cmd}")
     try:
-        _run_subprocess(full_cmd, cwd=rsuper_src)
+        _tracked_run(
+            full_cmd, shell=True, executable="/bin/bash", check=True, cwd=rsuper_src,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"MedFormer inference failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
@@ -684,7 +748,10 @@ def _run_rsuper_inference(input_path: str, session_dir: str) -> str:
     )
     print(f"[INFO] Running R-Super inference\n{full_cmd}")
     try:
-        _run_subprocess(full_cmd, cwd=rsuper_src)
+        _tracked_run(
+            full_cmd, shell=True, executable="/bin/bash", check=True, cwd=rsuper_src,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"R-Super inference failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
@@ -744,7 +811,7 @@ def _run_atlasnet_inference(input_path: str, session_dir: str, conda_path: str, 
     print(f"[INFO] Running Atlas-Net command for case {case_id}")
     print(full_cmd)
     try:
-        _run_subprocess(full_cmd)
+        _tracked_run(full_cmd, shell=True, executable="/bin/bash", check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Atlas-Net inference command failed\nCommand: {full_cmd}\nExit code: {e.returncode}"
@@ -768,7 +835,7 @@ def _is_truthy(value: str) -> bool:
 
 
 def _run_checked_process(cmd: list[str], error_prefix: str):
-    process = subprocess.run(cmd, text=True, capture_output=True)
+    process = _tracked_run(cmd, text=True, capture_output=True)
     if process.returncode != 0:
         raise RuntimeError(
             f"{error_prefix}"
@@ -983,7 +1050,7 @@ def _run_shapekit_inference(input_dir: str, session_dir: str) -> str:
     )
     print(f"[INFO] Running ShapeKit post-processing\n{full_cmd}")
     try:
-        _run_subprocess(full_cmd, cwd=shapekit_src)
+        _tracked_run(full_cmd, shell=True, executable="/bin/bash", check=True, cwd=shapekit_src)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"ShapeKit post-processing failed\nCommand: {full_cmd}\nExit code: {e.returncode}"

@@ -2,7 +2,7 @@ from flask import Blueprint, send_file, make_response, request, jsonify, Respons
 from werkzeug.utils import secure_filename
 from services.nifti_processor import NiftiProcessor
 from services.session_manager import SessionManager, generate_uuid
-from services.auto_segmentor import run_auto_segmentation, cancel_all_inference
+from services.auto_segmentor import run_auto_segmentation, cancel_session, cancel_all_inference
 from services.mesh_generation import generate_mesh_manifest, generate_organ_glb_bytes
 from services.inference_job_queue import InferenceJobQueue
 from services.intent_parser import parse_intent
@@ -835,11 +835,64 @@ inference_jobs = {}  # {session_id: {status, model, error, session_path, zip_pat
 _inference_jobs_lock = threading.Lock()
 
 
+def _job_meta_path(session_id):
+    return os.path.join(SESSIONS_DIR, session_id, "job.json")
+
+
+def _persist_inference_job(session_id, snapshot):
+    """Mirror a job's metadata to disk so status survives a gunicorn restart.
+
+    Best-effort and fully isolated in try/except: a disk failure here must
+    never break the request that triggered the status change. Atomic via
+    write-temp-then-rename so a crash mid-write can't leave a corrupt file.
+    """
+    try:
+        session_dir = os.path.join(SESSIONS_DIR, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        path = _job_meta_path(session_id)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(snapshot, f, default=str)
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"[job persist] {session_id}: {e}")
+
+
 def _set_inference_job(session_id, **kwargs):
     with _inference_jobs_lock:
         current = inference_jobs.get(session_id, {})
         current.update(kwargs)
         inference_jobs[session_id] = current
+        snapshot = dict(current)
+    _persist_inference_job(session_id, snapshot)
+
+
+def _get_inference_job(session_id):
+    """Look up a job, falling back to its on-disk copy after a restart.
+
+    Returns None when the session is genuinely unknown. A job found only on
+    disk was started by a *previous* process (a job from this process would
+    still be in memory); if that disk copy is still "running" its worker
+    thread died with the old process, so we surface it as failed rather than
+    reporting a phantom "running" that would poll forever.
+    """
+    job = inference_jobs.get(session_id)
+    if job:
+        return job
+    try:
+        path = _job_meta_path(session_id)
+        if os.path.exists(path):
+            with open(path) as f:
+                disk = json.load(f)
+            if (disk.get("status") or "").lower() in ("running", "queued"):
+                disk["status"] = "failed"
+                disk["error"] = disk.get("error") or "Interrupted by server restart"
+            with _inference_jobs_lock:
+                inference_jobs.setdefault(session_id, disk)
+            return inference_jobs.get(session_id)
+    except Exception as e:
+        print(f"[job rehydrate] {session_id}: {e}")
+    return None
 
 
 def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_path=None):
@@ -865,9 +918,12 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
     else:
         return jsonify({"error": "No CT file provided. Send MAIN_NIFTI or INPUT_SERVER_PATH."}), 400
 
+    # "queued": the worker thread starts immediately but real GPU work waits on
+    # the segmentor's one-at-a-time lock; the on_start callback below flips the
+    # job to "running" when it actually gets the GPU.
     _set_inference_job(
         session_id,
-        status="running",
+        status="queued",
         model=model_name,
         error=None,
         ct_path=input_path,
@@ -875,9 +931,27 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
         zip_path=os.path.join(session_path, "auto_masks.zip"),
     )
 
+    def _job_status():
+        job = inference_jobs.get(session_id) or {}
+        return (job.get("status") or "").lower()
+
     def do_segmentation_and_zip():
+        def _on_gpu_slot():
+            # User may have cancelled while we sat in the queue.
+            if _job_status() == "cancelled":
+                return False
+            _set_inference_job(session_id, status="running")
+            return True
+
         try:
-            output_mask_dir = run_auto_segmentation(input_path, session_dir=session_path, model=model_name)
+            output_mask_dir = run_auto_segmentation(
+                input_path, session_dir=session_path, model=model_name,
+                session_id=session_id, on_start=_on_gpu_slot,
+            )
+
+            if _job_status() == "cancelled":
+                print(f"🛑 Session {session_id} cancelled — skipping zip")
+                return
 
             if output_mask_dir is None or not os.path.exists(output_mask_dir):
                 msg = f"Auto segmentation failed for session {session_id}"
@@ -903,6 +977,11 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
                                zip_path=zip_path, output_mask_dir=output_mask_dir)
             print(f"✅ Finished segmentation and zipping for session {session_id}")
         except Exception as e:
+            # A killed subprocess surfaces here as CalledProcessError/RuntimeError;
+            # if the user cancelled, keep "cancelled" rather than reporting failure.
+            if _job_status() == "cancelled":
+                print(f"🛑 Session {session_id} cancelled (worker exited: {e})")
+                return
             print(f"❌ Exception while processing session {session_id}: {e}")
             _set_inference_job(session_id, status="failed", error=str(e))
 
@@ -967,7 +1046,7 @@ def run_epai_inference():
     )
 
     if source_reconstruction_session_id and not input_server_path and ct_file is None:
-        source_job = inference_jobs.get(source_reconstruction_session_id, {})
+        source_job = _get_inference_job(source_reconstruction_session_id) or {}
         source_output_dir = source_job.get("output_mask_dir")
         if source_output_dir:
             recon_path = os.path.join(source_output_dir, "reconstructed_ct.nii.gz")
@@ -1021,10 +1100,38 @@ def run_epai_inference():
 
 @api_blueprint.route('/inference-status/<session_id>', methods=['GET'])
 def get_inference_status(session_id):
-    job = inference_jobs.get(session_id)
+    job = _get_inference_job(session_id)
     if job is None:
         return jsonify({"status": "not_found", "session_id": session_id}), 404
     return jsonify({"session_id": session_id, **job}), 200
+
+
+@api_blueprint.route('/cancel-inference/<session_id>', methods=['POST'])
+def cancel_inference_session(session_id):
+    """Cancel one session's inference: dequeues it if still waiting for the
+    GPU, or SIGTERMs its subprocess group if already running. Per-session —
+    other users' jobs are untouched."""
+    try:
+        if not _is_safe_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+        job = _get_inference_job(session_id)
+        if job is None:
+            return jsonify({"status": "not_found", "session_id": session_id}), 404
+        status = (job.get("status") or "").lower()
+        if status in ("completed", "failed", "cancelled"):
+            return jsonify({"status": status, "message": "Job already finished"}), 200
+        # Mark first so a queued job aborts at the GPU-slot check even if
+        # there is no subprocess to kill yet.
+        _set_inference_job(session_id, status="cancelled", error="Cancelled by user")
+        try:
+            killed = cancel_session(session_id)
+            print(f"🛑 Cancel requested for {session_id} (process killed: {killed})")
+        except Exception as e:
+            print(f"[cancel] kill failed for {session_id}: {e}")
+        return jsonify({"status": "cancelled", "session_id": session_id}), 200
+    except Exception as e:
+        print(f"❌ [Cancel Error] {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @api_blueprint.route('/check-inference-status', methods=['GET'])
@@ -1266,7 +1373,7 @@ def get_result(session_id):
 
 @api_blueprint.route('/session-ct/<session_id>', methods=['GET'])
 def get_session_ct(session_id):
-    job = inference_jobs.get(session_id, {})
+    job = _get_inference_job(session_id) or {}
     ct_path = job.get("ct_path")
     if not ct_path or not os.path.exists(ct_path):
         return jsonify({"error": "CT file not found for session"}), 404
@@ -1278,7 +1385,7 @@ def get_session_ct(session_id):
 
 @api_blueprint.route('/session-segmentation/<session_id>', methods=['GET'])
 def get_session_segmentation(session_id):
-    job = inference_jobs.get(session_id, {})
+    job = _get_inference_job(session_id) or {}
     output_mask_dir = job.get("output_mask_dir")
     if not output_mask_dir:
         return jsonify({"error": "Segmentation not ready for session"}), 404
@@ -1294,7 +1401,7 @@ def get_session_segmentation(session_id):
 @api_blueprint.route('/session-reconstruction/<session_id>', methods=['GET'])
 def get_session_reconstruction(session_id):
     """Serves the OpenVAE reconstructed CT for a session."""
-    job = inference_jobs.get(session_id, {})
+    job = _get_inference_job(session_id) or {}
     output_mask_dir = job.get("output_mask_dir")
     if not output_mask_dir:
         return jsonify({"error": "Reconstruction not ready for session"}), 404

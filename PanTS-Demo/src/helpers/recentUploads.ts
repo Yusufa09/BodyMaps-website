@@ -1,7 +1,7 @@
 // Recent uploads persisted in the user's localStorage (mirrors JHU's recentIds
 // pattern). Extracted from UploadPage so the logic can be unit-tested.
 
-export type RecentUploadStatus = "Processing" | "Completed" | "Failed";
+export type RecentUploadStatus = "Processing" | "Completed" | "Failed" | "Cancelled";
 
 export type RecentUpload = {
 	sessionId: string;
@@ -39,6 +39,12 @@ export const addRecentUpload = (entry: RecentUpload): RecentUpload[] => {
 	return trimmed;
 };
 
+export const removeRecentUpload = (sessionId: string): RecentUpload[] => {
+	const list = loadRecentUploads().filter((u) => u.sessionId !== sessionId);
+	persistRecentUploads(list);
+	return list;
+};
+
 export const updateRecentUploadStatus = (
 	sessionId: string,
 	status: RecentUploadStatus
@@ -59,4 +65,10 @@ export const formatRelativeTime = (ts: number): string => {
 };
 
 export const recentStatusColor = (status: RecentUploadStatus): string =>
-	status === "Failed" ? "#ef4444" : status === "Processing" ? "#6a6a6a" : "#8f8f8f";
+	status === "Failed"
+		? "#ef4444"
+		: status === "Cancelled"
+			? "#d97706"
+			: status === "Processing"
+				? "#6a6a6a"
+				: "#8f8f8f";

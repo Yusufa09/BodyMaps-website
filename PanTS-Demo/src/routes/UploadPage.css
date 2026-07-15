@@ -450,6 +450,122 @@
   color: #111111;
 }
 
+/* Custom model dropdown */
+.model-dropdown {
+  position: relative;
+  width: 100%;
+}
+.model-dropdown-btn {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 8px;
+  color: #8f8f8f;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+.model-dropdown-btn:hover {
+  border-color: rgba(0,0,0,.15);
+  background-color: rgba(0,0,0,.06);
+}
+.model-dropdown-btn.open {
+  border-color: rgba(0,0,0,.25);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.06);
+}
+.model-dropdown-btn.has-value {
+  color: #111111;
+}
+.model-dropdown-chevron {
+  color: #6a6a6a;
+  flex-shrink: 0;
+  transition: transform 0.18s;
+}
+.model-dropdown-chevron.rotated {
+  transform: rotate(180deg);
+}
+.model-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 100;
+  overflow: hidden;
+}
+.model-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.model-dropdown-item:hover {
+  background: rgba(0,0,0,.04);
+}
+.model-dropdown-item.selected {
+  background: rgba(0,45,114,.05);
+}
+.model-dropdown-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.model-dropdown-item-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #111111;
+}
+.model-dropdown-item.selected .model-dropdown-item-name {
+  color: #002D72;
+}
+.model-dropdown-item-desc {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  color: #8f8f8f;
+}
+.model-dropdown-check {
+  color: #002D72;
+  flex-shrink: 0;
+}
+.model-dropdown-item-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 10px;
+}
+
+/* ── Cancel button on Active cards ── */
+.active-cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: #6a6a6a;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.active-cancel-btn:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
 /* Arrow connector */
 .pipeline-arrow {
   display: flex;
@@ -980,4 +1096,17 @@
   white-space: nowrap;
   min-width: 54px;
   text-align: right;
+}
+
+/* ── Active-upload spinner ── */
+@keyframes upload-spin {
+  to { transform: rotate(360deg); }
+}
+.upload-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 45, 114, 0.12);
+  border-top-color: #002D72;
+  animation: upload-spin 0.75s linear infinite;
 }
