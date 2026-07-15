@@ -2,7 +2,7 @@
 //
 // A chunked upload can be interrupted by a tab close/reload. The backend keeps
 // every received chunk on disk (`/tmp/uploads/<session_id>/chunk-N`) and a
-// re-sent chunk just overwrites, so the *server* side is already resumable —
+// re-sent chunk just overwrites, so the *server* side is already resumable -
 // the only thing lost on reload is the browser's `File` object (in-memory refs
 // don't survive a page unload). IndexedDB *does* persist Blobs across reloads,
 // so we stash the picked file plus a chunk cursor here and resume on reopen.
@@ -12,7 +12,7 @@
 
 export type PendingUpload = {
   sessionId: string;
-  file: Blob;         // the picked File — File extends Blob, survives in IDB
+  file: Blob;         // the picked File - File extends Blob, survives in IDB
   filename: string;
   model: string;
   bdmapId: string;
@@ -59,7 +59,7 @@ export async function savePendingUpload(p: PendingUpload): Promise<boolean> {
     await withStore("readwrite", store => store.put(p));
     return true;
   } catch (e) {
-    console.warn("savePendingUpload failed — upload won't be resumable", e);
+    console.warn("savePendingUpload failed - upload won't be resumable", e);
     return false;
   }
 }

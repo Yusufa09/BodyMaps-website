@@ -952,7 +952,7 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
             )
 
             if _job_status() == "cancelled":
-                print(f"🛑 Session {session_id} cancelled — skipping zip")
+                print(f"🛑 Session {session_id} cancelled - skipping zip")
                 return
 
             if output_mask_dir is None or not os.path.exists(output_mask_dir):
@@ -1111,7 +1111,7 @@ def get_inference_status(session_id):
 @api_blueprint.route('/cancel-inference/<session_id>', methods=['POST'])
 def cancel_inference_session(session_id):
     """Cancel one session's inference: dequeues it if still waiting for the
-    GPU, or SIGTERMs its subprocess group if already running. Per-session —
+    GPU, or SIGTERMs its subprocess group if already running. Per-session:
     other users' jobs are untouched."""
     try:
         if not _is_safe_id(session_id):

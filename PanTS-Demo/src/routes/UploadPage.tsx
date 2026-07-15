@@ -59,7 +59,7 @@ const UploadPage: React.FC = () => {
   const foregroundUploadSidRef = useRef<string | null>(null);
 
   // Local DICOM: stash the picked folder's files and open the viewer's /dicom
-  // route. Nothing is uploaded — the viewer reads the File objects directly.
+  // route. Nothing is uploaded - the viewer reads the File objects directly.
   const handleDicomFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // allow re-picking the same folder later
@@ -194,7 +194,7 @@ const UploadPage: React.FC = () => {
             stopPolling(sid);
             setPhase(sid);
             setRecentUploads(updateRecentUploadStatus(sid, "Failed"));
-            setMessage("Session no longer exists on the server — marked as Failed.");
+            setMessage("Session no longer exists on the server - marked as Failed.");
           }
           return;
         }
@@ -210,7 +210,7 @@ const UploadPage: React.FC = () => {
           setRecentUploads(updateRecentUploadStatus(sid, "Failed"));
           setMessage(`Inference failed${data.error ? `: ${data.error}` : ""}`);
         } else if (status === "cancelled") {
-          // Cancelled elsewhere (another tab, or the backend) — reflect it.
+          // Cancelled elsewhere (another tab, or the backend) - reflect it.
           stopPolling(sid);
           setPhase(sid);
           setRecentUploads(updateRecentUploadStatus(sid, "Cancelled"));
@@ -218,7 +218,7 @@ const UploadPage: React.FC = () => {
           setPhase(sid, status);
         }
       } catch (err) {
-        // Network blip or proxy error while the backend restarts — the job
+        // Network blip or proxy error while the backend restarts - the job
         // may still be alive server-side, so keep polling.
         console.error(err);
       }
@@ -238,7 +238,7 @@ const UploadPage: React.FC = () => {
     deletePendingUpload(sid);
 
     // Fire-and-forget: if the job never reached the server (upload phase)
-    // this 404s, which is fine — the client side is already torn down.
+    // this 404s, which is fine - the client side is already torn down.
     fetch(`${API_BASE}/api/cancel-inference/${sid}`, { method: "POST" }).catch(() => {});
 
     if (foregroundUploadSidRef.current === sid) {
@@ -250,9 +250,9 @@ const UploadPage: React.FC = () => {
   };
 
   useEffect(() => {
-    // Resume every in-flight run — there can be several in parallel. Uploads
+    // Resume every in-flight run - there can be several in parallel. Uploads
     // that were still mid-transfer live in IndexedDB and must be *resumed*
-    // (not polled — the server has no job for them yet); the rest are already
+    // (not polled - the server has no job for them yet); the rest are already
     // inferencing server-side, so we reconnect their pollers.
     let cancelled = false;
     (async () => {
@@ -283,7 +283,7 @@ const UploadPage: React.FC = () => {
   }, []);
 
   // Only warn before an unload if the current upload could NOT be stored in
-  // IndexedDB (quota/private-mode) — otherwise an interrupted upload resumes
+  // IndexedDB (quota/private-mode) - otherwise an interrupted upload resumes
   // automatically on reopen, so no scary dialog is needed.
   useEffect(() => {
     if (!isUploading || uploadResumableRef.current) return;
@@ -361,7 +361,7 @@ const UploadPage: React.FC = () => {
         const data = await parseApiResponse(res);
         if (!res.ok) throw new Error(data.error || "Chunk upload failed");
 
-        // Persist the cursor every so often (not every chunk — that would be a
+        // Persist the cursor every so often (not every chunk - that would be a
         // lot of IDB writes). On resume we re-send at most a few already-stored
         // chunks, which the backend just overwrites. Harmless.
         if (i % 16 === 0) await setPendingNextChunk(sid, i + 1);
@@ -383,7 +383,7 @@ const UploadPage: React.FC = () => {
       if (!finalizeRes.ok) throw new Error(finalizeData.error);
       const uploadedName = finalizeData.uploaded_filename || filename;
 
-      // File is fully on the server now — drop the IDB copy before we kick off
+      // File is fully on the server now - drop the IDB copy before we kick off
       // inference so a later reload resumes by polling, not re-uploading.
       await deletePendingUpload(sid);
       if (foreground) {
@@ -408,7 +408,7 @@ const UploadPage: React.FC = () => {
       if (foreground) setMessage(`${model} inference started. Session: ${sid}`);
       startInferencePolling(sid, model);
     } catch (err) {
-      // A user cancel aborts our fetches — cancelRun already did the cleanup
+      // A user cancel aborts our fetches - cancelRun already did the cleanup
       // and set the card to Cancelled, so don't overwrite that with Failed.
       if (controller.signal.aborted) return;
       console.error(err);
@@ -510,7 +510,7 @@ const UploadPage: React.FC = () => {
         setPhase(sessionId);
       } else if (status === "running" || status === "queued") {
         if (!pollTimersRef.current.has(sessionId)) {
-          // Use the model recorded on the card — the dropdown may have changed
+          // Use the model recorded on the card - the dropdown may have changed
           // since this run started, and the model decides the viewer route.
           const model = loadRecentUploads().find(u => u.sessionId === sessionId)?.model || selectedModel;
           startInferencePolling(sessionId, model);
@@ -652,7 +652,7 @@ const UploadPage: React.FC = () => {
           />
           <button className="dicom-open-link" onClick={() => dicomInputRef.current?.click()}>
             …or open a local DICOM folder in the viewer
-            <span>view only — the files never leave your browser</span>
+            <span>view only - the files never leave your browser</span>
           </button>
 
           {/* ── File chips ── */}
@@ -868,7 +868,7 @@ const UploadPage: React.FC = () => {
             </div>
           )}
 
-          {/* ── Progress (upload phase only — running inference shows in Active below) ── */}
+          {/* ── Progress (upload phase only - running inference shows in Active below) ── */}
           {isUploading && (
             <div className="progress-section">
               <div className="progress-item">
@@ -1011,7 +1011,7 @@ const UploadPage: React.FC = () => {
                 fontSize: "12px",
                 color: "#8f8f8f"
               }}>
-                No uploads yet — run a model above and your results will appear here.
+                No uploads yet - run a model above and your results will appear here.
               </div>
             ) : (
               recentUploads.filter(u => u.status !== "Processing").map((upload) => {
