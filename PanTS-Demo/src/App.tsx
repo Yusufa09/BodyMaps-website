@@ -63,6 +63,8 @@ function App() {
 								<Route path="/session/:sessionId" element={<VisualizationPage />} />
 								{/* Local DICOM series picked on the Upload page (files held in memory). */}
 								<Route path="/dicom" element={<VisualizationPage />} />
+								{/* Local NIfTI picked on the Upload page (file held in memory). */}
+								<Route path="/local-nifti" element={<VisualizationPage />} />
 								<Route path="/reconstruction/:reconstructionId" element={<VisualizationPage />} />
 								<Route path="/test" element={<RotatingHeartLoader />} />
 								<Route path="/upload" element={<UploadPage />} />

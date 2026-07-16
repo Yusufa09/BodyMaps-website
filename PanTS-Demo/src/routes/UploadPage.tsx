@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 const MODEL_OPTIONS: { id: string; label: string; desc: string }[] = [
+  { id: "None",      label: "None",       desc: "View only — files never leave your browser" },
   { id: "ePAI",      label: "ePAI",       desc: "For detailed pancreas and tumor analysis" },
   { id: "SuPreM",    label: "SuPreM",     desc: "For whole-body scans from lungs to legs" },
   { id: "MedFormer", label: "MedFormer",  desc: "For reliable abdominal segmentation" },
@@ -26,6 +27,7 @@ import {
 } from '../helpers/recentUploads';
 import Header from '../components/Header';
 import { looksLikeDicom, setLocalDicomFiles } from '../helpers/dicomLocal';
+import { setLocalNiftiFile } from '../helpers/localNifti';
 import {
   deletePendingUpload,
   loadPendingUploads,
@@ -55,9 +57,7 @@ type SelectedItem =
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const dicomInputRef = useRef<HTMLInputElement | null>(null);
-  // Separate folder picker for "run inference on a DICOM series" (vs. the
-  // view-only dicomInputRef that just opens the local viewer).
+  // Folder picker for a DICOM series (run inference, or view-only when model is "None").
   const dicomUploadInputRef = useRef<HTMLInputElement | null>(null);
   // One poll timer per in-flight session so runs can proceed in parallel.
   const pollTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
@@ -69,20 +69,6 @@ const UploadPage: React.FC = () => {
   // Which session currently drives the foreground upload progress bar.
   const foregroundUploadSidRef = useRef<string | null>(null);
 
-  // Local DICOM: stash the picked folder's files and open the viewer's /dicom
-  // route. Nothing is uploaded - the viewer reads the File objects directly.
-  const handleDicomFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // allow re-picking the same folder later
-    const candidates = files.filter(looksLikeDicom);
-    if (!candidates.length) {
-      alert("No DICOM files (.dcm) found in the selected folder.");
-      return;
-    }
-    setLocalDicomFiles(candidates);
-    navigate("/dicom");
-  };
-
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   // Which selected item's inline preview is open (null = none). One at a time.
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
@@ -93,7 +79,7 @@ const UploadPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [inferenceCompleted, setInferenceCompleted] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<"ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "">("");
+  const [selectedModel, setSelectedModel] = useState<"None" | "ePAI" | "SuPreM" | "OpenVAE" | "MedFormer" | "R-Super" | "Atlas-Net" | "">("");
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const modelDropRef = useRef<HTMLDivElement>(null);
   const [preDropOpen, setPreDropOpen] = useState(false);
@@ -534,6 +520,21 @@ const UploadPage: React.FC = () => {
   /* ── Run inference ── */
   const handleRunEpaiInference = async () => {
     const item = selectedItems[0] ?? null;
+
+    // "None" model = view only: open the scan in its full local viewer, nothing is
+    // uploaded or run. DICOM opens the /dicom viewer, NIfTI the /local-nifti viewer.
+    if (selectedModel === "None") {
+      if (!item) { alert("Select a scan to view first."); return; }
+      if (item.kind === "dicom") {
+        setLocalDicomFiles(item.files);
+        navigate("/dicom");
+      } else {
+        setLocalNiftiFile(item.file);
+        navigate("/local-nifti");
+      }
+      return;
+    }
+
     const path = serverPath.trim();
     if (!item && !path) {
       alert("Provide a server file path or upload/select a file first.");
@@ -746,43 +747,45 @@ const UploadPage: React.FC = () => {
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
+            <input
+              // Set the folder-picker attributes imperatively — passing webkitdirectory
+              // as a JSX/spread prop doesn't reliably apply it, so the picker falls back
+              // to single files. directory is the Firefox spelling.
+              ref={el => {
+                dicomUploadInputRef.current = el;
+                if (el) {
+                  el.setAttribute('webkitdirectory', '');
+                  el.setAttribute('directory', '');
+                }
+              }}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleDicomInferenceSelect}
+            />
             <svg className="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
             <div className="dropzone-text">Click or drag to upload</div>
-            <div className="dropzone-sub">.nii or .nii.gz</div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <button
+                type="button"
+                className="dropzone-btn"
+                onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+              >
+                Select NIfTI file
+              </button>
+              <button
+                type="button"
+                className="dropzone-btn"
+                onClick={e => { e.stopPropagation(); dicomUploadInputRef.current?.click(); }}
+              >
+                Select DICOM folder
+              </button>
+            </div>
           </div>
-
-          {/* ── Local DICOM: view a folder of .dcm slices in-browser, nothing uploaded ── */}
-          <input
-            ref={dicomInputRef}
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            // Non-standard folder picker (Chrome/Edge/Safari); TS doesn't know it.
-            {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
-            onChange={handleDicomFolderSelect}
-          />
-          <button className="dicom-open-link" onClick={() => dicomInputRef.current?.click()}>
-            …or open a local DICOM folder in the viewer
-            <span>view only - the files never leave your browser</span>
-          </button>
-
-          {/* ── DICOM series → inference: slices upload and convert to NIfTI on the server ── */}
-          <input
-            ref={dicomUploadInputRef}
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
-            onChange={handleDicomInferenceSelect}
-          />
-          <button className="dicom-open-link" onClick={() => dicomUploadInputRef.current?.click()}>
-            …or select a DICOM folder to run inference
-            <span>uploaded and converted to NIfTI on the server</span>
-          </button>
 
           {/* ── Selected items: NIfTI files + DICOM series, each individually previewable ── */}
           {selectedItems.length > 0 && (
@@ -968,7 +971,7 @@ const UploadPage: React.FC = () => {
               onClick={handleRunEpaiInference}
               disabled={!selectedModel || isUploading}
             >
-              Run
+              {selectedModel === "None" ? "View" : "Run"}
             </button>
           </div>
 
