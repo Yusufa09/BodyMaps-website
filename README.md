@@ -31,7 +31,7 @@ PANTS_LOWRES_PATH=/home/visitor/pants_lowres
 CANCERVERSE_PATH=/folder/where/CancerVerse
 CANCERVERSE_LOWRES_PATH=/home/visitor/cancerverse_lowres
 ```
-`CANCERVERSE_PATH` must contain `CancerVerse_dataset_metadata.csv` + `CV_########/ct.nii.gz`. When set, `/api/search?dataset=cancerverse` (or `dataset=all`) searches it; CancerVerse has no masks yet, so mask endpoints return `{"masks_available": false}`.
+`CANCERVERSE_PATH` holds the `CV_########/ct.nii.gz` cases; the metadata CSV `CancerVerse_dataset_metadata.csv` sits **next to** that folder (in its parent). When set, `/api/search?dataset=cancerverse` (or `dataset=all`) searches it; CancerVerse has no masks yet, so mask endpoints return `{"masks_available": false}`.
 
 Run backend:
 

@@ -1264,8 +1264,11 @@ DF = _norm_cols(DF_RAW)
 # CancerVerse metadata (CT-only second dataset). Loaded through the SAME _norm_cols
 # so search/sort/row_to_item work unchanged. Optional: if the path/CSV is absent
 # (e.g. local dev) DF_CV stays None and CV search returns empty — never raises.
+# The CSV sits NEXT TO the CancerVerse image folder, not inside it:
+#   <parent>/CancerVerse_dataset_metadata.csv   +   <parent>/CancerVerse/CV_########/
 CANCERVERSE_META_FILE = (
-    os.path.join(Constants.CANCERVERSE_PATH, "CancerVerse_dataset_metadata.csv")
+    os.path.join(os.path.dirname(os.path.normpath(Constants.CANCERVERSE_PATH)),
+                 "CancerVerse_dataset_metadata.csv")
     if Constants.CANCERVERSE_PATH else None
 )
 DF_CV = None
