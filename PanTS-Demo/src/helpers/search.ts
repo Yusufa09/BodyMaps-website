@@ -28,7 +28,13 @@ export const EMPTY_FILTERS: SearchFilters = {
 // The multi-select array keys (everything except `tumor`).
 export type MultiFilterKey = "dataset" | "sex" | "age" | "manufacturer" | "ctPhase" | "siteNat" | "year";
 
-// Minimal shape of an item returned by /api/search and /api/random.
+// A case id as used across the UI: a bare number for PanTS (e.g. 8854) or the full
+// prefixed string for CancerVerse (e.g. "CV_00000001"). CancerVerse ids MUST keep
+// their prefix so they route to the CV endpoints instead of being mistaken for PanTS.
+export type CaseId = number | string;
+
+// Minimal shape of an item returned by /api/search and /api/random. The id fields can
+// be a PanTS id ("PanTS_00008854") or a CancerVerse id ("CV_00000001").
 export type SearchItem = {
 	case_id?: string | number;
 	"PanTS ID"?: string | number;
@@ -38,10 +44,13 @@ export type SearchItem = {
 	age?: number | string | null;
 };
 
-// Parse the numeric case id out of any of the id-ish fields, e.g.
-// "PanTS_00008854" -> 8854. Returns 0 when nothing usable is present.
-export const itemToId = (it: SearchItem): number => {
-	const raw = String(it.case_id ?? it["PanTS ID"] ?? it.id ?? "");
+// Resolve a card id from any of the id-ish fields. PanTS → the bare number
+// ("PanTS_00008854" → 8854); CancerVerse → the full string kept as-is
+// ("CV_00000001") so it hits the CV endpoints. Returns 0 when nothing usable.
+export const itemToId = (it: SearchItem): CaseId => {
+	const raw = String(it.case_id ?? it["PanTS ID"] ?? it.id ?? "").trim();
+	if (!raw) return 0;
+	if (raw.toUpperCase().startsWith("CV")) return raw; // keep "CV_00000001" as-is
 	const m = raw.match(/\d+/);
 	return m ? Number(m[0]) : 0;
 };

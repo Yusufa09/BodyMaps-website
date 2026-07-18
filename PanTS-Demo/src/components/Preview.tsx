@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../helpers/constants";
 import { prefetchViewer } from "../helpers/prefetchViewer";
 import { prefetchVolume } from "../helpers/prefetchVolume";
+import type { CaseId } from "../helpers/search";
 import type { PreviewType } from "../types";
 
 type Props = {
-	id: number;
+	id: CaseId;
 	previewMetadata: PreviewType;
 	saved?: boolean;
 	onToggleSave?: () => void;
@@ -39,7 +40,11 @@ export default function Preview({
 
 	if (!previewMetadata) return null;
 
-	const caseIdStr = `PanTS_${id.toString().padStart(8, "0")}`;
+	// CancerVerse ids arrive as full strings ("CV_00000001"); PanTS as bare numbers.
+	const caseIdStr =
+		typeof id === "string" && id.toUpperCase().startsWith("CV")
+			? id
+			: `PanTS_${id.toString().padStart(8, "0")}`;
 	// HuggingFace fallback, routed through the backend's same-origin proxy. A *direct*
 	// cross-origin image is blocked by the viewer's COEP: require-corp header (which is
 	// why thumbnails went missing); the proxy keeps it same-origin, matching home.html.

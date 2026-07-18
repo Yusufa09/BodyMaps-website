@@ -13,6 +13,7 @@ import Preview from "../components/Preview";
 import { API_BASE } from "../helpers/constants";
 import {
 	buildSearchParams,
+	type CaseId,
 	countActiveFilters,
 	EMPTY_FILTERS,
 	itemToId,
@@ -137,7 +138,7 @@ const filterLabelStyle: React.CSSProperties = {
 };
 
 export default function Homepage() {
-	const [PREVIEW_IDS, SET_PREVIEW_IDS] = useState<number[]>([]);
+	const [PREVIEW_IDS, SET_PREVIEW_IDS] = useState<CaseId[]>([]);
 	const navigation = useNavigate();
 	const [previewMetadata, setPreviewMetadata] = useState<{
 		[key: string]: PreviewType;
@@ -170,33 +171,38 @@ export default function Homepage() {
 		};
 	}, []);
 
-	const handleToggleSave = (id: number, meta?: PreviewType) => {
+	const handleToggleSave = (id: CaseId, meta?: PreviewType) => {
 		const m = meta ?? previewMetadata[id];
 		toggleSavedCase({ id, sex: m?.sex ?? "", age: m?.age ?? 0, tumor: m?.tumor ?? 0 });
 	};
 
 	// Cases picked for side-by-side comparison (max 2). Adding a third drops the oldest,
 	// so the two most recent picks are always what get compared.
-	const [compareIds, setCompareIds] = useState<number[]>([]);
+	const [compareIds, setCompareIds] = useState<CaseId[]>([]);
 	const [compareTyped, setCompareTyped] = useState("");
-	const toggleCompare = (id: number) => {
+	const toggleCompare = (id: CaseId) => {
 		setCompareIds((prev) =>
 			prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)
 		);
 	};
 	// Add a case by id typed into the tray (idempotent; caps at the two most recent).
-	const addCompareId = (id: number) => {
+	const addCompareId = (id: CaseId) => {
 		setCompareIds((prev) => (prev.includes(id) ? prev : [...prev, id].slice(-2)));
 	};
 	const submitTypedCompare = () => {
-		const n = parseInt(compareTyped.trim(), 10);
-		if (Number.isFinite(n) && n > 0) addCompareId(n);
+		const raw = compareTyped.trim();
+		if (raw.toUpperCase().startsWith("CV")) {
+			addCompareId(raw); // CancerVerse id typed in full
+		} else {
+			const n = parseInt(raw, 10);
+			if (Number.isFinite(n) && n > 0) addCompareId(n);
+		}
 		setCompareTyped("");
 	};
 
 	// Turn /api/search (or /api/random) items into the ids + metadata the grid needs.
 	const ingestItems = (items: SearchItem[]) => {
-		const ids: number[] = [];
+		const ids: CaseId[] = [];
 		const meta: { [key: string]: PreviewType } = {};
 		for (const it of items) {
 			const id = itemToId(it);

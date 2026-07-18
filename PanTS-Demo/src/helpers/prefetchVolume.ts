@@ -11,10 +11,11 @@
 // Callers should debounce with a short hover dwell (see Preview.tsx) so a quick pass-over
 // doesn't trigger a fetch.
 import { API_BASE } from "./constants";
+import type { CaseId } from "./search";
 
 const MAX_CONCURRENT = 2;
-const requested = new Set<number>();
-const queue: number[] = [];
+const requested = new Set<CaseId>();
+const queue: CaseId[] = [];
 let inFlight = 0;
 
 function pump(): void {
@@ -33,9 +34,10 @@ function pump(): void {
 	}
 }
 
-/** Queue a low-res CT prefetch for a dataset case (idempotent, bandwidth-bounded). */
-export function prefetchVolume(id: number): void {
-	if (!Number.isFinite(id) || requested.has(id)) return;
+/** Queue a low-res CT prefetch for a dataset case (idempotent, bandwidth-bounded).
+ *  Accepts a PanTS number or a CancerVerse string id (e.g. "CV_00000001"). */
+export function prefetchVolume(id: CaseId): void {
+	if (!id || requested.has(id)) return; // 0 / "" = no usable id
 	requested.add(id);
 	queue.push(id);
 	pump();

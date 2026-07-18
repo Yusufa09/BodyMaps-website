@@ -5,7 +5,7 @@
 // (cross-tab) to stay in sync.
 
 export type SavedCase = {
-	id: number;
+	id: number | string; // PanTS number (8854) or CancerVerse string ("CV_00000001")
 	sex: string;
 	age: number;
 	tumor: number;
@@ -18,7 +18,9 @@ export const SAVED_CASES_EVENT = "savedcaseschange";
 export const loadSavedCases = (): SavedCase[] => {
 	try {
 		const arr = JSON.parse(localStorage.getItem(SAVED_CASES_KEY) || "[]");
-		return Array.isArray(arr) ? arr.filter((c) => c && typeof c.id === "number") : [];
+		return Array.isArray(arr)
+			? arr.filter((c) => c && (typeof c.id === "number" || typeof c.id === "string"))
+			: [];
 	} catch {
 		return [];
 	}
@@ -38,7 +40,8 @@ const persistSavedCases = (list: SavedCase[]) => {
 	}
 };
 
-export const isSavedCase = (id: number): boolean => loadSavedCases().some((c) => c.id === id);
+export const isSavedCase = (id: number | string): boolean =>
+	loadSavedCases().some((c) => c.id === id);
 
 // Add the case if it isn't saved, otherwise remove it. Returns the updated list (most
 // recently saved first).
