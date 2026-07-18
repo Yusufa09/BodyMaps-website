@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../helpers/constants";
 import { prefetchViewer } from "../helpers/prefetchViewer";
+import { prefetchVolume } from "../helpers/prefetchVolume";
 import type { PreviewType } from "../types";
 
 type Props = {
@@ -25,6 +26,9 @@ export default function Preview({
 	const [imgLoaded, setImgLoaded] = useState(false);
 	const [imgError, setImgError] = useState(false);
 	const [hovered, setHovered] = useState(false);
+	// Warm the low-res CT only after a short hover dwell, so skimming across the grid
+	// doesn't fire a fetch per card. Cleared on mouse-leave.
+	const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Prefer the lab's local data via the existing backend endpoint; fall back to
 	// the HuggingFace dataset if the local profile image isn't available on the
 	// server (so thumbnails never break regardless of deployment). Loaded natively
@@ -65,8 +69,17 @@ export default function Preview({
 			onMouseEnter={() => {
 				setHovered(true);
 				prefetchViewer(); // warm the viewer JS chunk so clicking feels instant
+				// warm the low-res CT too, after a brief dwell (see prefetchVolume)
+				if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+				prefetchTimer.current = setTimeout(() => prefetchVolume(id), 150);
 			}}
-			onMouseLeave={() => setHovered(false)}
+			onMouseLeave={() => {
+				setHovered(false);
+				if (prefetchTimer.current) {
+					clearTimeout(prefetchTimer.current);
+					prefetchTimer.current = null;
+				}
+			}}
 			onClick={() => navigate(`/case/${id}`)}
 		>
 			{/* Gradient accent line — slides in on hover */}
