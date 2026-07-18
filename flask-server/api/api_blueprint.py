@@ -200,7 +200,11 @@ def get_preview(clabel_ids):
     clabel_ids = clabel_ids.split(",")
     res = {}
     for clabel_id in clabel_ids:
-        pid = get_panTS_id(clabel_id)
+        try:
+            pid = get_folder_id(clabel_id)  # dataset-aware (PanTS or CV)
+        except Exception:
+            res[clabel_id] = {"sex": "", "age": "", "tumor": 0}
+            continue
         entry = _METADATA_CACHE.get(pid, {"sex": "", "age": "", "tumor": 0})
         res[clabel_id] = entry
     return jsonify(res)
@@ -210,6 +214,9 @@ def get_preview(clabel_ids):
 def get_image_preview(clabel_id):
     if not _is_safe_id(clabel_id):
         return jsonify({"error": "Invalid id"}), 400
+    if get_dataset_from_case_id(secure_filename(clabel_id)) == "CancerVerse":
+        # No profile thumbnails for CancerVerse yet — let the frontend fall back.
+        return jsonify({"error": "No preview for CancerVerse case"}), 404
     path = os.path.join(Constants.PANTS_PATH, "profile_only", get_panTS_id(secure_filename(clabel_id)), "profile.jpg")
     if not os.path.exists(path):
         return jsonify({"error": f"File not found: {path} "}), 404
@@ -348,17 +355,27 @@ def get_mask_data():
 def get_main_nifti(clabel_id):
     if not _is_safe_id(clabel_id):
         return jsonify({"error": "Invalid id"}), 400
-    case_dir = f"{Constants.PANTS_PATH}/image_only/{get_panTS_id(secure_filename(clabel_id))}"
-    main_nifti_path = f"{case_dir}/{Constants.MAIN_NIFTI_FILENAME}"
 
-    # ?res=low → serve the precomputed low-res copy when present (much smaller/faster
-    # for big full-body scans). It lives under LOWRES_ROOT (a writable disk), NOT the
-    # read-only dataset mount. Falls back to full res if it hasn't been generated.
-    if (request.args.get('res') or '').strip().lower() == 'low':
-        low_name = Constants.MAIN_NIFTI_FILENAME.replace('.nii.gz', '_lowres.nii.gz')
-        low_path = f"{LOWRES_ROOT}/image_only/{get_panTS_id(secure_filename(clabel_id))}/{low_name}"
-        if os.path.exists(low_path):
-            main_nifti_path = low_path
+    safe_id = secure_filename(clabel_id)
+    want_low = (request.args.get('res') or '').strip().lower() == 'low'
+
+    if get_dataset_from_case_id(safe_id) == "CancerVerse":
+        # CancerVerse: CT-only, stored flat at CANCERVERSE_PATH/<CV id>/ct.nii.gz.
+        paths = get_case_nifti_paths(safe_id)
+        main_nifti_path = paths["image"]
+        if want_low and os.path.exists(paths["lowres_image"]):
+            main_nifti_path = paths["lowres_image"]
+    else:
+        case_dir = f"{Constants.PANTS_PATH}/image_only/{get_panTS_id(safe_id)}"
+        main_nifti_path = f"{case_dir}/{Constants.MAIN_NIFTI_FILENAME}"
+        # ?res=low → serve the precomputed low-res copy when present (much smaller/faster
+        # for big full-body scans). It lives under LOWRES_ROOT (a writable disk), NOT the
+        # read-only dataset mount. Falls back to full res if it hasn't been generated.
+        if want_low:
+            low_name = Constants.MAIN_NIFTI_FILENAME.replace('.nii.gz', '_lowres.nii.gz')
+            low_path = f"{LOWRES_ROOT}/image_only/{get_panTS_id(safe_id)}/{low_name}"
+            if os.path.exists(low_path):
+                main_nifti_path = low_path
 
     if os.path.exists(main_nifti_path):
         response = make_response(send_file(main_nifti_path, mimetype='application/gzip'))
@@ -464,6 +481,9 @@ def define_term():
  
 @api_blueprint.route('/get-report-data/<id>', methods=['GET'])
 def get_report_data(id):
+    # CancerVerse has no masks/RadGPT report yet — respond gracefully.
+    if get_dataset_from_case_id(secure_filename(str(id))) == "CancerVerse":
+        return jsonify({"masks_available": False}), 200
     if id is None or not str(id).isdigit():
         return jsonify({"error": "Invalid id parameter"}), 400
     case_id = int(id)
@@ -723,6 +743,8 @@ def get_report_data(id):
  
 @api_blueprint.route('/get-specific-segmentations/<combined_labels_id>', methods=['POST'])
 async def get_specific_segmentations(combined_labels_id):
+    if get_dataset_from_case_id(combined_labels_id) == "CancerVerse":
+        return jsonify({"masks_available": False}), 200
     combined_labels_id = combined_labels_id.replace("PanTS_", "")
     combined_labels_id = combined_labels_id.lstrip("0")
     try: 
@@ -753,6 +775,10 @@ async def get_specific_segmentations(combined_labels_id):
 async def get_segmentations(combined_labels_id):
     if not _is_safe_id(combined_labels_id):
         return jsonify({"error": "Invalid id"}), 400
+    # CancerVerse has no masks yet — respond gracefully instead of 404/crashing so
+    # the viewer can show the CT alone.
+    if get_dataset_from_case_id(secure_filename(combined_labels_id)) == "CancerVerse":
+        return jsonify({"masks_available": False}), 200
     nifti_path = f"{Constants.PANTS_PATH}/mask_only/{get_panTS_id(secure_filename(combined_labels_id))}/{Constants.COMBINED_LABELS_NIFTI_FILENAME}"
     labels = list(Constants.PREDEFINED_LABELS.values())
     # ?res=low → serve the precomputed low-res mask (paired with the low-res CT so the
@@ -1647,7 +1673,8 @@ def ping():
 @api_blueprint.route("/search", methods=["GET"])
 def api_search():
     # return jsonify({"message": "pong"}), 200
-    df = apply_filters(DF).copy()
+    # ?dataset=cancerverse|all switches/unions the base metadata; default = PanTS.
+    df = apply_filters(select_dataset_df()).copy()
     df = ensure_sort_cols(df)
 
     # ---- 排序參數 ----

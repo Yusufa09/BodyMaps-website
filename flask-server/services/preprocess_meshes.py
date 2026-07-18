@@ -188,8 +188,17 @@ def get_panTS_id(index: int):
     iter = max(0, 8 - len(str(index)))
     for _ in range(iter):
         cur_case_id = "0" + cur_case_id
-    cur_case_id = "PanTS_" + cur_case_id    
+    cur_case_id = "PanTS_" + cur_case_id
     return cur_case_id
+
+def get_cancerverse_id(index):
+    """CV_%08d parallel to get_panTS_id (CancerVerse is CT-only — no masks yet)."""
+    digits = str(index).upper().replace("CV_", "").replace("CV", "")
+    return "CV_" + digits.zfill(8)
+
+def get_folder_id(index):
+    """Dataset-aware id: CV ids -> get_cancerverse_id, else get_panTS_id."""
+    return get_cancerverse_id(index) if str(index).strip().upper().startswith("CV") else get_panTS_id(index)
 
 # display_id: PanTS_00000900
 def preprocess_case(display_id: str, label_nifti_path: str, output_root: str):

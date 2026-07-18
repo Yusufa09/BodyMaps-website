@@ -19,6 +19,11 @@ class Constants:
     # api_blueprint variables
     BASE_PATH = os.environ.get('BASE_PATH', '/')
     PANTS_PATH = os.environ.get('PANTS_PATH')
+    # Second dataset (CT-only, no masks yet). CV_%08d ids, CSV metadata.
+    # Low-res copies live under CANCERVERSE_LOWRES_PATH/image_only/<case>/ct_lowres.nii.gz.
+    CANCERVERSE_PATH = os.environ.get('CANCERVERSE_PATH')
+    CANCERVERSE_LOWRES_PATH = os.environ.get('CANCERVERSE_LOWRES_PATH', '/home/visitor/cancerverse_lowres')
+    DATASET_PREFIXES = {'PanTS': 'PanTS', 'CancerVerse': 'CV'}
     PERMISSIONS_DIR = os.environ.get('PERMISSIONS_DIR', "/home/visitor/data")
     MESH_PATH = PERMISSIONS_DIR + "/render_only"
     MAIN_NIFTI_FORM_NAME = 'MAIN_NIFTI'

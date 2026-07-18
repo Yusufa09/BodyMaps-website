@@ -13,7 +13,7 @@ touch .env  # creates the .env file
 nano .env
 ```
 
-Inside .env file:
+Inside .env file (see `flask-server/.env.example` for the full list):
 ```
 BASE_PATH=/
 
@@ -21,6 +21,17 @@ PANTS_PATH=/folder/where/PanTS
 
 USE_SSL=false
 ```
+
+Optional dataset vars:
+```
+# Writable dir for precomputed PanTS low-res volumes (make_lowres.py output)
+PANTS_LOWRES_PATH=/home/visitor/pants_lowres
+
+# CancerVerse (second, CT-only dataset). Leave unset to disable it.
+CANCERVERSE_PATH=/folder/where/CancerVerse
+CANCERVERSE_LOWRES_PATH=/home/visitor/cancerverse_lowres
+```
+`CANCERVERSE_PATH` holds the `CV_########/ct.nii.gz` cases; the metadata CSV `CancerVerse_dataset_metadata.csv` sits **next to** that folder (in its parent). When set, `/api/search?dataset=cancerverse` (or `dataset=all`) searches it; CancerVerse has no masks yet, so mask endpoints return `{"masks_available": false}`.
 
 Run backend:
 
