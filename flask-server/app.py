@@ -15,6 +15,7 @@ from constants import Constants
 from api.api_blueprint import api_blueprint
 from models.base import db
 from models.combined_labels import CombinedLabels
+from models.engine import get_engine
 
 def create_session_dir():
     if not os.path.isdir(Constants.SESSIONS_DIR_NAME):
@@ -28,6 +29,28 @@ def create_app():
     app.register_blueprint(api_blueprint, url_prefix=f'{Constants.BASE_PATH}/api')
     
     app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2 GB, for overcoming size limits in file uploads
+
+    # Point Flask-SQLAlchemy at the same URL as the job store. FSA builds its own
+    # engine, but both get identical SQLite PRAGMAs from the process-wide listener
+    # in models/engine.py. Schema is managed by Alembic, not create_all.
+    app.config['SQLALCHEMY_DATABASE_URI'] = Constants.DATABASE_URL
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+    db.init_app(app)
+    with app.app_context():
+        get_engine()  # init at boot, not first request
+
+    # Import any pre-DB job.json (keeps pre-deploy results viewable), then fail
+    # jobs orphaned by the restart so pollers see the truth, not a phantom "running".
+    try:
+        from services import job_store
+        imported = job_store.import_legacy_job_json(Constants.SESSIONS_DIR_NAME)
+        if imported:
+            print(f"[boot] imported {imported} legacy job.json record(s)")
+        reaped = job_store.reap_orphaned_jobs()
+        if reaped:
+            print(f"[boot] reaped {reaped} orphaned inference job(s)")
+    except Exception as e:
+        print(f"[boot] job store init skipped: {e}")
 
     class FilterProgressRequests(logging.Filter):
         def filter(self, record):
