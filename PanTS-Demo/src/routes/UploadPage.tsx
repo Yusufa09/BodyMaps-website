@@ -73,9 +73,7 @@ const UploadPage: React.FC = () => {
   // Which selected item's inline preview is open (null = none). One at a time.
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
   const [message, setMessage] = useState<string>("");
-  const [serverPath, setServerPath] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
-  const [bdmapId, setBdmapId] = useState<string>("");
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [inferenceCompleted, setInferenceCompleted] = useState<boolean>(false);
@@ -88,7 +86,6 @@ const UploadPage: React.FC = () => {
   const [postDropOpen, setPostDropOpen] = useState(false);
   const postDropRef = useRef<HTMLDivElement>(null);
   const [postValue, setPostValue] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [recentUploads, setRecentUploads] = useState<RecentUpload[]>(() => loadRecentUploads());
   // Sub-state of each Active card: "uploading" | "queued" | "running".
@@ -535,16 +532,14 @@ const UploadPage: React.FC = () => {
       return;
     }
 
-    const path = serverPath.trim();
-    if (!item && !path) {
-      alert("Provide a server file path or upload/select a file first.");
+    if (!item) {
+      alert("Select a file to upload first.");
       return;
     }
 
     const model = selectedModel;
     const sid = crypto.randomUUID();
-    const itemName = item ? (item.kind === 'dicom' ? item.label : item.file.name) : undefined;
-    const label = bdmapId.trim() || (path ? path.split("/").pop() : itemName) || sid;
+    const label = (item.kind === 'dicom' ? item.label : item.file.name) || sid;
 
     setInferenceCompleted(false);
     setRecentUploads(
@@ -558,47 +553,23 @@ const UploadPage: React.FC = () => {
       })
     );
 
-    // Server-path run: nothing to upload, kick off inference directly. A server
-    // path always wins over a selected file, matching the prior behavior.
-    if (path) {
-      try {
-        setSessionId(sid);
-        setMessage(`Starting ${model} inference...`);
-        const fd = new FormData();
-        fd.append("session_id", sid);
-        fd.append("model_name", model);
-        fd.append("INPUT_SERVER_PATH", path);
-        const res = await fetch(`${API_BASE}/api/run-epai-inference`, { method: "POST", body: fd });
-        const data = await parseApiResponse(res);
-        if (!res.ok) throw new Error(data.error || "Failed to start inference");
-        setMessage(`${model} inference started. Session: ${sid}`);
-        setPhase(sid, "queued");
-        startInferencePolling(sid, model);
-      } catch (err) {
-        console.error(err);
-        setRecentUploads(updateRecentUploadStatus(sid, "Failed"));
-        setMessage("Failed: " + (err as Error).message);
-      }
-      return;
-    }
-
     // Consume the first item so the next can be queued. A DICOM folder uploads its
     // slices and converts server-side; a NIfTI file rides the resumable path (stashed
     // in IndexedDB so an interrupted upload can resume).
     setSelectedItems(prev => prev.slice(1));
 
-    if (item!.kind === 'dicom') {
-      runDicomUpload(sid, item!.files, model);
+    if (item.kind === 'dicom') {
+      runDicomUpload(sid, item.files, model);
       return;
     }
 
-    const file = item!.file;
+    const file = item.file;
     const pending: PendingUpload = {
       sessionId: sid,
       file,
       filename: file.name,
       model,
-      bdmapId: bdmapId.trim(),
+      bdmapId: "",
       totalChunks: Math.ceil(file.size / CHUNK_SIZE),
       nextChunk: 0,
     };
@@ -729,8 +700,6 @@ const UploadPage: React.FC = () => {
 
       <div className="upload-main">
         <div className="upload-card">
-          <div className="upload-card-label">Upload</div>
-
           {/* ── Drop zone ── */}
           <div
             className={`dropzone${isDragOver ? ' drag-over' : ''}`}
@@ -882,7 +851,7 @@ const UploadPage: React.FC = () => {
               </div>
               <div className="model-dropdown" ref={modelDropRef}>
                 <button
-                  className={`model-dropdown-btn${selectedModel ? ' has-value' : ''}${modelDropOpen ? ' open' : ''}`}
+                  className={`model-dropdown-btn${selectedModel && selectedModel !== 'None' ? ' has-value' : ''}${modelDropOpen ? ' open' : ''}`}
                   onClick={() => setModelDropOpen(o => !o)}
                   type="button"
                 >
@@ -976,36 +945,6 @@ const UploadPage: React.FC = () => {
           </div>
 
           {/* ── Advanced options ── */}
-          <div className="advanced-section">
-            <button
-              className={`advanced-toggle${showAdvanced ? ' open' : ''}`}
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                <path d="M2 1l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Advanced Options
-            </button>
-            {showAdvanced && (
-              <div className="advanced-fields">
-                <input
-                  type="text"
-                  className="advanced-input"
-                  placeholder="Server CT path: /path/to/xxx.nii.gz"
-                  value={serverPath}
-                  onChange={(e) => setServerPath(e.target.value)}
-                />
-                <input
-                  type="text"
-                  className="advanced-input"
-                  placeholder="Optional BDMAP ID (e.g. BDMAP_00000338)"
-                  value={bdmapId}
-                  onChange={(e) => setBdmapId(e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-
           {/* ── Action bar ── */}
           {sessionId && (
             <div className="action-bar">
