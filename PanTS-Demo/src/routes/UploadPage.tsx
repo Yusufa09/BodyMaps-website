@@ -851,7 +851,7 @@ const UploadPage: React.FC = () => {
               </div>
               <div className="model-dropdown" ref={modelDropRef}>
                 <button
-                  className={`model-dropdown-btn${selectedModel ? ' has-value' : ''}${modelDropOpen ? ' open' : ''}`}
+                  className={`model-dropdown-btn${selectedModel && selectedModel !== 'None' ? ' has-value' : ''}${modelDropOpen ? ' open' : ''}`}
                   onClick={() => setModelDropOpen(o => !o)}
                   type="button"
                 >
