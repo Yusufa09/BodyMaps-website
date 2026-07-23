@@ -8,3 +8,9 @@ tmp/*
 downloaded.nii.gz
 PanTS/data/pdf/
 .DS_Store
+
+# Local SQLite dev database (production uses DATABASE_URL outside the repo).
+# The -wal/-shm sidecars are created by WAL mode; ignore all three.
+flask-server/pants-dev.db
+flask-server/pants-dev.db-wal
+flask-server/pants-dev.db-shm

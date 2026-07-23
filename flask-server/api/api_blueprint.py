@@ -13,6 +13,7 @@ from services.ollama_client import (
     list_ollama_models,
 )
 from services.segmentation_metrics import calculate_session_metrics
+from services import job_store
 from models.application_session import ApplicationSession
 from models.combined_labels import CombinedLabels
 from models.base import db
@@ -866,73 +867,22 @@ def download_segmentation_zip(id):
 
 import time
 
-inference_jobs = {}  # {session_id: {status, model, error, session_path, zip_path}}
-# Guards the read-modify-write in _set_inference_job: background segmentation
-# threads and request handlers touch inference_jobs concurrently, and the
-# get/update/set below is not atomic without a lock (updates would be lost).
-_inference_jobs_lock = threading.Lock()
-
-
-def _job_meta_path(session_id):
-    # secure_filename is the CodeQL-recognised path-injection barrier (see
-    # path_safety.py): session_id reaches the filesystem here, so sanitize it
-    # at the construction site. Real ids are UUIDs, which pass through intact.
-    return os.path.join(SESSIONS_DIR, secure_filename(session_id), "job.json")
-
-
-def _persist_inference_job(session_id, snapshot):
-    """Mirror a job's metadata to disk so status survives a gunicorn restart.
-
-    Best-effort and fully isolated in try/except: a disk failure here must
-    never break the request that triggered the status change. Atomic via
-    write-temp-then-rename so a crash mid-write can't leave a corrupt file.
-    """
-    try:
-        path = _job_meta_path(session_id)  # sanitized via secure_filename
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(snapshot, f, default=str)
-        os.replace(tmp, path)
-    except Exception as e:
-        print(f"[job persist] {session_id}: {e}")
+# Inference-job state lives in the `job` table via services.job_store now, not
+# in-process. These wrappers keep the historical call sites working.
 
 
 def _set_inference_job(session_id, **kwargs):
-    with _inference_jobs_lock:
-        current = inference_jobs.get(session_id, {})
-        current.update(kwargs)
-        inference_jobs[session_id] = current
-        snapshot = dict(current)
-    _persist_inference_job(session_id, snapshot)
+    job_store.upsert_job(session_id, **kwargs)
 
 
 def _get_inference_job(session_id):
-    """Look up a job, falling back to its on-disk copy after a restart.
+    return job_store.get_job(session_id)
 
-    Returns None when the session is genuinely unknown. A job found only on
-    disk was started by a *previous* process (a job from this process would
-    still be in memory); if that disk copy is still "running" its worker
-    thread died with the old process, so we surface it as failed rather than
-    reporting a phantom "running" that would poll forever.
-    """
-    job = inference_jobs.get(session_id)
-    if job:
-        return job
-    try:
-        path = _job_meta_path(session_id)
-        if os.path.exists(path):
-            with open(path) as f:
-                disk = json.load(f)
-            if (disk.get("status") or "").lower() in ("running", "queued"):
-                disk["status"] = "failed"
-                disk["error"] = disk.get("error") or "Interrupted by server restart"
-            with _inference_jobs_lock:
-                inference_jobs.setdefault(session_id, disk)
-            return inference_jobs.get(session_id)
-    except Exception as e:
-        print(f"[job rehydrate] {session_id}: {e}")
-    return None
+
+def _job_status_of(session_id):
+    """Lowercased status for a session, or '' if unknown."""
+    job = job_store.get_job(session_id)
+    return (job.get("status") or "").lower() if job else ""
 
 
 def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_path=None):
@@ -972,8 +922,7 @@ def _start_auto_segmentation(session_id, model_name, ct_file=None, server_input_
     )
 
     def _job_status():
-        job = inference_jobs.get(session_id) or {}
-        return (job.get("status") or "").lower()
+        return _job_status_of(session_id)
 
     def do_segmentation_and_zip():
         def _on_gpu_slot():
@@ -1660,9 +1609,7 @@ def finalize_dicom():
 @api_blueprint.route('/cancel-inference', methods=['POST'])
 def cancel_inference():
     cancel_all_inference()
-    for session_id, job in inference_jobs.items():
-        if job.get('status') == 'running':
-            _set_inference_job(session_id, status='failed', error='Cancelled by user')
+    job_store.fail_all_active(error='Cancelled by user')
     return jsonify({"message": "Inference cancelled"}), 200
 
 
