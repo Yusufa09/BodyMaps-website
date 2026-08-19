@@ -539,6 +539,14 @@ function VisualizationPage() {
 	const isHd =
 		typeof window !== "undefined" &&
 		new URLSearchParams(window.location.search).get("hd") === "1";
+	// ?organs=all checks every segmentation once the catalog loads. A fresh
+	// /case/:id opens with nothing checked, so the overlays and the 3D pane are
+	// both empty — which reads as "the page is broken" in a screenshot, and
+	// costs a take if you roll before noticing. Opt-in via the URL, so the
+	// default for real users is unchanged.
+	const wantsAllOrgans =
+		typeof window !== "undefined" &&
+		new URLSearchParams(window.location.search).get("organs") === "all";
 	
 	const [showAnnotationToolbar, setShowAnnotationToolbar] = useState(false);
 	const [isEditRendering, setIsEditRendering] = useState(false);
@@ -910,6 +918,14 @@ function VisualizationPage() {
 	});
 	};
 	const hasAnySegments = checkBoxData.length > 0;
+	useEffect(() => {
+		if (!wantsAllOrgans || !checkBoxData.length) return;
+		// checkState is indexed by organ id, not position, so it has to be long
+		// enough to hold the highest id rather than just the organ count.
+		const size = Math.max(...checkBoxData.map((o) => o.id)) + 1;
+		setCheckState(Array.from({ length: size }, () => true));
+		setSegmentVisibility(Object.fromEntries(checkBoxData.map((o) => [o.id, true])));
+	}, [wantsAllOrgans, checkBoxData]);
 	useEffect(() => {
 		// Catalog organs are already part of checkBoxData at load, so every
 		// scope option (insideSegment, insideAllSegments, insideVisibleSegments,

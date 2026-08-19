@@ -28,6 +28,11 @@ Pants/ProfileTr/*
 
 /tmp
 
+# Assets pulled for the capture routes (/wall and /cinematic). Regenerate with
+# scripts/download-thumbs.mjs and scripts/download-meshes.mjs rather than
+# committing ~1200 images and a few hundred MB of GLBs.
+public/thumbs/
+public/meshes/
 
 .vercel
 

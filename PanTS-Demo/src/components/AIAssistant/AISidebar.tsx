@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "../../contexts/authContext";
 import { API_BASE } from "../../helpers/constants";
+import { getScriptedAnswer, playScriptedAnswer } from "../../helpers/scriptedAnswers";
 import type {
   AIAction,
   AIModelInfo,
@@ -946,6 +947,29 @@ export default function AISidebar({
         },
       ]);
       setLoading(true);
+
+      // Capture-only: a fixed reply for one scripted question, gated behind
+      // ?script=1 (see helpers/scriptedAnswers.ts). Returns null in every other
+      // case, so ordinary messages fall straight through to the server below.
+      const scripted = getScriptedAnswer(String(caseId), text);
+      if (scripted) {
+        const controller = new AbortController();
+        abortRef.current = controller;
+        await playScriptedAnswer(
+          scripted,
+          (soFar) =>
+            updateMessage(assistantId, (m) => ({
+              ...m,
+              content: soFar,
+              status: undefined,
+            })),
+          controller.signal,
+        );
+        updateMessage(assistantId, (m) => ({ ...m, streaming: false, status: undefined }));
+        setLoading(false);
+        abortRef.current = null;
+        return;
+      }
 
       const images = outgoingAttachments
         .filter((item) => item.kind === "image" && item.dataUrl)

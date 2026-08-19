@@ -32,6 +32,12 @@ const SignupRedirect = lazy(() => import("./routes/SignupRedirect"));
 const LegalPage = lazy(() => import("./routes/LegalPage"));
 const RotatingHeartLoader = lazy(() => import("./components/Loading"));
 
+// Capture-only routes for the launch video (branch: demo/cinematic-capture).
+// Unlinked from the UI — they exist to be screen-recorded. The query params that
+// drive each shot are documented in the header comment of each file.
+const CinematicPage = lazy(() => import("./routes/CinematicPage"));
+const WallPage = lazy(() => import("./routes/WallPage"));
+
 const BASENAME = import.meta.env.VITE_BASENAME;
 
 // Lightweight fallback shown while a lazy route chunk loads (intentionally avoids the
@@ -139,6 +145,9 @@ function App() {
                     path="/compare-viewer"
                     element={<CompareViewerPage />}
                   />
+                  {/* Capture-only, see the lazy imports above. */}
+                  <Route path="/cinematic/:caseId" element={<CinematicPage />} />
+                  <Route path="/wall" element={<WallPage />} />
                 </Routes>
               </Suspense>
               {/* Global auth popup, above all routes. Inside the router so it

@@ -8,9 +8,14 @@ export const FACET_GROUPS: { key: MultiFilterKey; field: string; title: string }
 ];
 
 // Number of cards in the curated landing strip (and skeleton placeholders).
-export const CARD_COUNT = 8;
-// 4 columns × 4 rows = 16 cards per page.
-export const PER_PAGE = 16;
+// Raised for the launch video (branch: demo/cinematic-capture): the closing
+// shot scrolls the real library rather than the /wall capture route, so the
+// grid has to run well past one screen. Must stay even — loadCurated splits it
+// half tumor / half no-tumor and interleaves the two.
+export const CARD_COUNT = 60;
+// 4 columns × 15 rows = 60 cards per page. Matched to CARD_COUNT so a searched
+// result set scrolls the same way the curated strip does.
+export const PER_PAGE = 60;
 
 export const TUMOR_OPTIONS: { value: TumorFilter; label: string }[] = [
   { value: "any", label: "Any" },

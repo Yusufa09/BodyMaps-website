@@ -62,7 +62,12 @@ export default defineConfig({
 		cors: true,
 		proxy: {
 			"/api": {
-				target: env.VITE_API_BASE,
+				// VITE_PROXY_TARGET lets the proxy point somewhere the browser must NOT
+				// call directly. Set VITE_API_BASE empty and VITE_PROXY_TARGET to an SSH
+				// tunnel (http://localhost:8000) to develop against the real backend with
+				// no CORS and no dependency on the public hostname. Falls back to
+				// VITE_API_BASE so existing local setups are unaffected.
+				target: env.VITE_PROXY_TARGET || env.VITE_API_BASE,
 				changeOrigin: true,
 				secure: false,
 			},

@@ -1,0 +1,390 @@
+<!doctype html>
+<!--
+  Capture-only title/stat/closing cards for the launch video.
+  Branch: demo/cinematic-capture. Not linked from the app.
+
+  Open http://localhost:5173/cards.html and go fullscreen (Cmd-Ctrl-F) so there
+  is no chrome in frame. Ground is --ink (#0F172A) — the same value CinematicPage and WallPage
+  use — so a cut from the cold open to the title card has no seam.
+
+    1 … 11      jump to a card by number — type both digits for 10 and up
+    R           replay the current card's animation
+    → ←         step between cards
+
+  Two capture modes:
+    /cards.html              cut mode — grounds on --ink, cut straight in
+    /cards.html?overlay=1    overlay mode — grounds on #000 for Screen-blending
+                             over footage; micro-type drops to a lower third
+
+  Cards are in film order, so → walks the cut front to back. Nothing animates
+  until a card is shown, so you can arm the recording, then press R and get a
+  clean run every take.
+
+  Headline cards carry their copy in data-type and reveal it character by
+  character — the type-on the ChatGPT Health ad uses. Per-card speed override:
+  data-cps (characters per second, default 30).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>BodyMaps — launch cards</title>
+<style>
+  /* The app's own font files, not a CDN — the cards must render identically
+     with no network, and font-display:block avoids a fallback flashing on
+     frame one of a take. */
+  @font-face {
+    font-family: "IBM Plex Sans"; font-weight: 400; font-display: block;
+    src: url("/fonts/ibm-plex-sans-v23-latin-normal-400.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans"; font-weight: 600; font-display: block;
+    src: url("/fonts/ibm-plex-sans-v23-latin-normal-600.woff2") format("woff2");
+  }
+
+  /* Brand tokens, mirrored from src/styles/brand.css — except the accent.
+     The film is deliberately monochrome: ink ground, white type, muted labels.
+     No --accent-tint here, so nothing on camera carries the brand orange.
+     Hierarchy comes from size and weight instead of colour. */
+  :root {
+    --ink: #0F172A;
+    --on-ink: #F7F7F4;
+    --on-ink-muted: #8A93A6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--ink);
+    color: var(--on-ink);
+    cursor: none;
+    overflow: hidden;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    position: fixed;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .card.on { display: flex; }
+
+  /* Title + closing ------------------------------------------------------ */
+  .wordmark {
+    font-size: clamp(48px, 9.5vw, 190px);
+    font-weight: 600;
+    letter-spacing: -0.045em;
+    line-height: 1;
+    opacity: 0;
+  }
+  /* Eyebrow above the mark. Fades in first, so "Introducing" is already sitting
+     there when the wordmark resolves through it. */
+  .eyebrow {
+    margin-bottom: clamp(10px, 1.5vh, 24px);
+    font-size: clamp(13px, 1.55vw, 31px);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--on-ink-muted);
+    opacity: 0;
+  }
+  .on .eyebrow  { animation: rise 900ms cubic-bezier(.22,.61,.36,1) forwards; }
+  .on .wordmark { animation: rise 1200ms cubic-bezier(.22,.61,.36,1) 420ms forwards; }
+
+  /* Closing card only. The mark resolves, then the URL — so the last thing on
+     screen is where to actually go. The figures are deliberately absent: they are
+     claimed once at 0:10 and the wall is their proof, not a restatement. */
+  .closing-url {
+    margin-top: clamp(14px, 2vh, 30px);
+    font-size: clamp(13px, 1.5vw, 30px);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--on-ink);
+    opacity: 0;
+  }
+  .on .closing-url { animation: rise 1000ms cubic-bezier(.22,.61,.36,1) 900ms forwards; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(0.42em); filter: blur(7px); }
+    to   { opacity: 1; transform: none; filter: none; }
+  }
+
+  /* Headlines ------------------------------------------------------------ */
+  /* The ::before ghost holds the full copy at visibility:hidden so the box is
+     already its final size on frame one. Without it, a headline that wraps
+     re-flows its lines as the characters arrive and the block jumps mid-take. */
+  .headline {
+    position: relative;
+    max-width: 78vw;
+    font-size: clamp(38px, 6.2vw, 124px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-align: center;
+    text-wrap: balance;
+  }
+  .headline::before { content: attr(data-type); visibility: hidden; }
+  .headline .typed { position: absolute; inset: 0; }
+
+  /* Overlay mode — ?overlay=1 -------------------------------------------- */
+  /* Default (cut mode) grounds on --ink, matching CinematicPage and WallPage, so
+     a straight cut to a card has no seam. Overlay mode instead grounds on true
+     black, because the way to put a card over footage is to Screen-blend it in
+     an NLE and black is the only value that drops out completely. --ink is
+     #0F172A — navy — and would lift the whole picture by that much.
+     In overlay mode the micro-type cards also drop to a lower third, where a
+     caption belongs when there is picture above it. */
+  /* Both html and body — html paints the page canvas, so leaving it on --ink
+     would let navy show at any edge body doesn't cover and lift the blend. */
+  html.overlay, body.overlay { background: #000; }
+  body.overlay .card.lower {
+    justify-content: flex-end;
+    padding-bottom: clamp(48px, 11vh, 150px);
+  }
+
+  /* Micro-type — the caption voice, not the headline voice, so it must not
+     compete with a .headline card either side of it. */
+  .microtype {
+    position: relative;
+    max-width: 82vw;
+    font-size: clamp(12px, 1.25vw, 26px);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--on-ink-muted);
+    text-align: center;
+  }
+  .microtype::before { content: attr(data-type); visibility: hidden; }
+  .microtype .typed { position: absolute; inset: 0; }
+
+  /* Stats ---------------------------------------------------------------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    gap: clamp(28px, 5.4vw, 118px);
+    align-items: end;
+  }
+  .stat { text-align: center; opacity: 0; }
+  .on .stat { animation: rise 900ms cubic-bezier(.22,.61,.36,1) forwards; }
+  .on .stat:nth-child(1) { animation-delay: 200ms; }
+  .on .stat:nth-child(2) { animation-delay: 550ms; }
+  .on .stat:nth-child(3) { animation-delay: 900ms; }
+  .on .stat:nth-child(4) { animation-delay: 1250ms; }
+
+  .num {
+    color: var(--on-ink);
+    font-size: clamp(34px, 5.6vw, 112px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .label {
+    margin-top: clamp(8px, 1.3vh, 20px);
+    font-size: clamp(11px, 1.02vw, 21px);
+    font-weight: 400;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: var(--on-ink-muted);
+  }
+</style>
+</head>
+<body>
+
+<!-- Film order: → walks the cut front to back. Timecodes are from launch-video-v2.md. -->
+
+<!-- 1 · 0:10 -->
+<section class="card" id="c-stats">
+  <div class="stats">
+    <div class="stat"><div class="num" data-to="36390" data-fmt="comma">0</div><div class="label">Scans</div></div>
+    <div class="stat"><div class="num" data-to="145">0</div><div class="label">Medical centers</div></div>
+    <div class="stat"><div class="num" data-to="993" data-suffix="K">0</div><div class="label">Structures</div></div>
+    <div class="stat"><div class="num" data-to="32">0</div><div class="label">Classes per scan</div></div>
+  </div>
+</section>
+
+<!-- 2 · 0:18 -->
+<section class="card" id="c-title">
+  <div class="eyebrow">Introducing</div>
+  <div class="wordmark">BodyMaps</div>
+</section>
+
+<!-- 3 · 0:22 -->
+<section class="card" id="c-browse">
+  <h1 class="headline" data-type="Browse the dataset."></h1>
+</section>
+
+<!-- 4 · 0:33 -->
+<section class="card" id="c-upload">
+  <h1 class="headline" data-type="Upload a scan. It comes back labeled."></h1>
+</section>
+
+<!-- 5 · 0:43 -->
+<section class="card" id="c-models">
+  <h1 class="headline" data-type="Clinical-grade models."></h1>
+</section>
+
+
+<!-- 6 · 1:09 -->
+<section class="card" id="c-planes">
+  <h1 class="headline" data-type="Three planes. Three dimensions."></h1>
+</section>
+
+<!-- 7 · 1:21 -->
+<section class="card lower" id="c-structures">
+  <div class="microtype" data-type="32 structures, labeled."></div>
+</section>
+
+
+
+
+<!-- 8 · 1:52 -->
+<section class="card" id="c-report">
+  <h1 class="headline" data-type="Every case comes with a report."></h1>
+</section>
+
+<!-- 9 · 2:14 -->
+<section class="card" id="c-compare">
+  <h1 class="headline" data-type="Two scans. One scroll."></h1>
+</section>
+
+<!-- 10 · 2:29 -->
+<section class="card" id="c-onescan">
+  <h1 class="headline" data-type="That was one scan."></h1>
+</section>
+
+<!-- 11 · 3:01 — closing. Figures deliberately absent: claimed once at 0:10, and
+     the wall is their proof rather than a restatement (launch-video-v2.md §3a). -->
+<section class="card" id="c-closing">
+  <div class="wordmark">BodyMaps</div>
+  <div class="closing-url">bodymaps.wse.jhu.edu</div>
+</section>
+
+<script>
+  const cards = [...document.querySelectorAll('.card')];
+  let index = 0;
+
+  // ?overlay=1 — capture the card for compositing over footage rather than as a
+  // full-frame cut. See the .overlay rules above.
+  if (new URLSearchParams(location.search).get('overlay') === '1') {
+    document.documentElement.classList.add('overlay');
+    document.body.classList.add('overlay');
+  }
+
+  // Count-ups are driven off the same delays as the CSS reveal so a number starts
+  // climbing exactly as its column fades up, rather than racing ahead of it.
+  const DELAYS = [200, 550, 900, 1250];
+  const RUN = 900;
+  let timers = [];
+
+  // Bumped on every show(). Both animation loops below capture it and bail the
+  // moment it moves, because clearTimeout cannot stop an in-flight
+  // requestAnimationFrame: without this, replaying a card mid-run lets the old
+  // loop fire one more frame with a stale t0, which computes a position past the
+  // end and paints the finished value — a flash of the full text (or the final
+  // number) before the new run clears it and starts over.
+  let gen = 0;
+
+  function countUp(el, delay) {
+    const myGen = gen;
+    const to = Number(el.dataset.to);
+    const comma = el.dataset.fmt === 'comma';
+    const suffix = el.dataset.suffix ?? '';
+    const render = (v) => {
+      el.textContent = (comma ? v.toLocaleString('en-US') : String(v)) + suffix;
+    };
+    render(0);
+    timers.push(setTimeout(() => {
+      if (myGen !== gen) return;
+      const t0 = performance.now();
+      const tick = (now) => {
+        if (myGen !== gen) return;
+        const p = Math.min(1, (now - t0) / RUN);
+        // Same ease as the CSS reveal, so motion and type settle together.
+        const eased = 1 - Math.pow(1 - p, 3);
+        render(Math.round(to * eased));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, delay));
+  }
+
+  // Type-on. The ::before ghost already holds the box open at full size, so the
+  // characters land into fixed geometry and nothing re-flows mid-take.
+  const TYPE_DELAY = 260;
+  const DEFAULT_CPS = 30;
+
+  function typeOn(el) {
+    const myGen = gen;
+    const text = el.dataset.type;
+    const cps = Number(el.dataset.cps) || DEFAULT_CPS;
+    let span = el.querySelector('.typed');
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'typed';
+      el.appendChild(span);
+    }
+    span.textContent = '';
+    timers.push(setTimeout(() => {
+      if (myGen !== gen) return;
+      const t0 = performance.now();
+      const tick = (now) => {
+        if (myGen !== gen) return;
+        const n = Math.floor(((now - t0) / 1000) * cps);
+        span.textContent = text.slice(0, n);
+        if (n < text.length) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, TYPE_DELAY));
+  }
+
+  function show(i) {
+    gen++;
+    timers.forEach(clearTimeout);
+    timers = [];
+    index = (i + cards.length) % cards.length;
+    cards.forEach((c) => c.classList.remove('on'));
+
+    const card = cards[index];
+    // Reflow between removing and re-adding .on so the CSS animations restart
+    // from frame zero on a replay instead of being treated as already finished.
+    void card.offsetWidth;
+    card.classList.add('on');
+
+    card.querySelectorAll('.num').forEach((el, n) => countUp(el, DELAYS[n] ?? 0));
+    card.querySelectorAll('[data-type]').forEach(typeOn);
+  }
+
+  // Digits buffer for 350ms so two-digit card numbers work: "4" jumps to card 4,
+  // "1" "2" in quick succession jumps to 12. Nothing is shown until the buffer
+  // settles, so typing 12 never flashes card 1 on the way.
+  const JUMP_SETTLE = 350;
+  let buffer = '';
+  let bufferTimer = null;
+
+  function queueJump(digit) {
+    buffer += digit;
+    clearTimeout(bufferTimer);
+    const commit = () => {
+      const n = Number(buffer);
+      buffer = '';
+      if (n >= 1 && n <= cards.length) show(n - 1);
+    };
+    // Nothing longer than the card count can be extended further — go at once.
+    if (Number(buffer + '0') > cards.length) commit();
+    else bufferTimer = setTimeout(commit, JUMP_SETTLE);
+  }
+
+  addEventListener('keydown', (e) => {
+    if (e.key >= '0' && e.key <= '9') queueJump(e.key);
+    else if (e.key === 'r' || e.key === 'R') show(index);
+    else if (e.key === 'ArrowRight' || e.key === ' ') show(index + 1);
+    else if (e.key === 'ArrowLeft') show(index - 1);
+  });
+
+  show(0);
+
+</script>
+</body>
+</html>
